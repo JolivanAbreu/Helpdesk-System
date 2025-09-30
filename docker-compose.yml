@@ -1,0 +1,21 @@
+# help-desk-system/docker-compose.yml
+
+version: '3.8'
+
+services:
+  db:
+    image: mariadb:10.5
+    container_name: helpdesk_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password_segura # Troque por uma senha forte
+      MYSQL_DATABASE: helpdesk_db
+      MYSQL_USER: helpdesk_user
+      MYSQL_PASSWORD: user_password_segura # Troque por uma senha forte
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+volumes:
+  mariadb_data:
