@@ -1,6 +1,6 @@
 # help-desk-system/docker-compose.yml
 
-version: '3.8'
+version: "3.8"
 
 services:
   db:
@@ -8,10 +8,10 @@ services:
     container_name: helpdesk_db
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root_password_segura # Troque por uma senha forte
+      MYSQL_ROOT_PASSWORD: root_password_segura
       MYSQL_DATABASE: helpdesk_db
       MYSQL_USER: helpdesk_user
-      MYSQL_PASSWORD: user_password_segura # Troque por uma senha forte
+      MYSQL_PASSWORD: user_password_segura
     ports:
       - "3306:3306"
     volumes:

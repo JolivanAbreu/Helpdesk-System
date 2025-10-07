@@ -15,7 +15,10 @@ class Usuario extends Model {
     });
   }
 
-  // Método para verificar a senha
+  static associate(models) {
+    this.hasMany(models.Chamado, { foreignKey: 'usuario_id', as: 'chamados' });
+  }
+
   checkPassword(senha) {
     return bcrypt.compare(senha, this.senha_hash);
   }

@@ -9,7 +9,7 @@ module.exports = {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     define: {
-        timestamps: true, // Cria colunas createdAt e updatedAt
-        underscored: true, // Nomes de tabelas e colunas com snake_case
+        timestamps: true,
+        underscored: true,
     },
 };
