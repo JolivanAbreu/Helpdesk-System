@@ -1,10 +1,39 @@
 // src/controllers/ChamadoController.js
 const Chamado = require('../models/Chamado');
 const Usuario = require('../models/Usuario');
+const Interacao = require('../models/Interacao');
 
 module.exports = {
+  async show(req, res) {
+    const { chamado_id } = req.params;
+    console.log(`--- ACESSANDO ROTA DE DETALHES (SHOW) PARA O CHAMADO ID: ${chamado_id} ---`);
+    try {
+      const { chamado_id } = req.params;
+      const chamado = await Chamado.findByPk(chamado_id, {
+        include: [
+          { association: 'usuario', attributes: ['id', 'nome', 'email'] },
+          {
+            association: 'interacoes',
+            include: { association: 'usuario', attributes: ['id', 'nome'] }
+          },
+          { association: 'anexos' },
+        ],
+        order: [[{ model: Interacao, as: 'interacoes' }, 'createdAt', 'ASC']]
+      });
+
+      if (!chamado) {
+        return res.status(404).send({ error: 'Chamado não encontrado' });
+      }
+
+      return res.json(chamado);
+    } catch (error) {
+      return res.status(400).send({ error: 'Erro ao buscar detalhes do chamado.' });
+    }
+  },
+
   // Listar chamados do usuário logado
   async index(req, res) {
+    console.log('--- ACESSANDO ROTA DE LISTAGEM (INDEX) ---');
     try {
       const chamados = await Chamado.findAll({
         where: {
@@ -67,4 +96,6 @@ module.exports = {
       return res.status(400).send({ error: 'Erro ao atualizar chamado.' });
     }
   },
+
+
 };

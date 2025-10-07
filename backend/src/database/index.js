@@ -1,4 +1,4 @@
-// src/database/index.js
+// backend/src/database/index.js
 const Sequelize = require('sequelize');
 const dbConfig = require('../config/database');
 
@@ -9,13 +9,11 @@ const Anexo = require('../models/Anexo');
 
 const connection = new Sequelize(dbConfig);
 
-// Inicializa os modelos
 Usuario.init(connection);
 Chamado.init(connection);
 Interacao.init(connection);
 Anexo.init(connection);
 
-// Executa as associações
 Usuario.associate(connection.models);
 Chamado.associate(connection.models);
 Interacao.associate(connection.models);
