@@ -26,11 +26,17 @@ module.exports = async (req, res, next) => {
   }
 
   const usuario = await Usuario.findByPk(decoded.id, {
-    attributes: ['id', 'nome', 'email', 'perfil'],
+    attributes: ['id', 'nome', 'email', 'perfil', 'ativo'],
   });
 
   if (!usuario) {
     return res.status(401).json({ error: 'Usuário não encontrado.' });
+  }
+
+  // Conta desativada pelo admin perde o acesso na hora,
+  // mesmo que ainda tenha um token válido.
+  if (!usuario.ativo) {
+    return res.status(401).json({ error: 'Conta desativada. Procure o administrador.' });
   }
 
   req.userId = usuario.id;

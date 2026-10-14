@@ -4,6 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api, { usuarioLogado, isEquipe, mensagemDeErro } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
+import AppHeader from "../components/AppHeader";
 
 const STATUS = ["aberto", "em andamento", "resolvido"];
 
@@ -108,19 +109,18 @@ export default function ChamadoDetalhe() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow p-4 flex justify-between items-center gap-4">
-        <h1 className="text-xl font-bold text-gray-800">
-          Chamado #{chamado.id}
-        </h1>
+      <AppHeader />
+      <div className="px-4 sm:px-8 pt-6 flex items-center gap-4">
         <button
           onClick={() => navigate("/dashboard")}
-          className="bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600"
+          className="text-sm text-gray-600 hover:text-gray-900"
         >
-          Voltar
+          ← Voltar
         </button>
-      </header>
+        <h1 className="text-2xl font-bold text-gray-800">Chamado #{chamado.id}</h1>
+      </div>
 
-      <main className="p-4 sm:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <main className="p-4 sm:p-8 pt-4 sm:pt-4 grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Coluna de detalhes, status e anexos */}
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-lg shadow-md">

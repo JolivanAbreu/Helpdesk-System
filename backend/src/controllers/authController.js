@@ -54,6 +54,12 @@ module.exports = {
       return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
     }
 
+    // Só informa que a conta está desativada depois de a senha conferir,
+    // para não revelar nada a quem não sabe a senha.
+    if (!usuario.ativo) {
+      return res.status(403).json({ error: 'Conta desativada. Procure o administrador.' });
+    }
+
     return res.json({
       usuario: usuarioPublico(usuario),
       token: generateToken({ id: usuario.id }),

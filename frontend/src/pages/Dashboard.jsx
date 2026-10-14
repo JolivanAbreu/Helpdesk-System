@@ -2,13 +2,8 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
-import api, {
-  TOKEN_KEY,
-  USER_KEY,
-  usuarioLogado,
-  isEquipe,
-  mensagemDeErro,
-} from "../services/api";
+import api, { usuarioLogado, isEquipe, mensagemDeErro } from "../services/api";
+import AppHeader from "../components/AppHeader";
 import StatusBadge from "../components/StatusBadge";
 import NovoChamadoModal from "../components/NovoChamadoModal";
 
@@ -35,12 +30,6 @@ export default function Dashboard() {
     carregarChamados();
   }, []);
 
-  function handleLogout() {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    navigate("/");
-  }
-
   function handleChamadoCriado(chamado) {
     setModalAberto(false);
     navigate(`/chamado/${chamado.id}`);
@@ -48,33 +37,20 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow p-4 flex flex-wrap gap-3 justify-between items-center">
-        <div>
-          <h1 className="text-xl font-bold text-gray-800">Helpdesk</h1>
-          <p className="text-sm text-gray-500">
-            {user?.nome} · perfil {user?.perfil}
-          </p>
-        </div>
-        <div className="flex gap-3">
+      <AppHeader />
+
+      <main className="p-4 sm:p-8">
+        <div className="flex flex-wrap gap-3 justify-between items-center mb-4">
+          <h2 className="text-2xl font-semibold text-gray-700">
+            {equipe ? "Todos os chamados" : "Meus chamados"}
+          </h2>
           <button
             onClick={() => setModalAberto(true)}
             className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors"
           >
             Abrir Novo Chamado
           </button>
-          <button
-            onClick={handleLogout}
-            className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 transition-colors"
-          >
-            Sair
-          </button>
         </div>
-      </header>
-
-      <main className="p-4 sm:p-8">
-        <h2 className="text-2xl font-semibold mb-4 text-gray-700">
-          {equipe ? "Todos os chamados" : "Meus chamados"}
-        </h2>
         <div className="bg-white p-6 rounded-lg shadow-md">
           {carregando ? (
             <p className="text-gray-600">Carregando...</p>

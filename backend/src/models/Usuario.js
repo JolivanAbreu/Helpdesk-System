@@ -9,6 +9,10 @@ class Usuario extends Model {
       email: DataTypes.STRING,
       perfil: DataTypes.STRING, // Ex: 'comum', 'suporte', 'admin'
       senha_hash: DataTypes.STRING,
+      ativo: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true,
+      },
     }, {
       sequelize,
       tableName: 'usuarios',

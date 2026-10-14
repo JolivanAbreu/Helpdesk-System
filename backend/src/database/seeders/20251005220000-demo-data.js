@@ -1,11 +1,18 @@
 'use strict';
 // Dados de demonstração: um usuário de cada perfil + chamados de exemplo.
 // Senha de todos os usuários: 123456
+// (depende da migration que cria a coluna "ativo", que roda antes dos seeders)
 
 const bcrypt = require('bcryptjs');
 const { QueryTypes } = require('sequelize');
 
-const EMAILS = ['admin@helpdesk.com', 'suporte@helpdesk.com', 'usuario@helpdesk.com'];
+const EMAILS = [
+  'admin@helpdesk.com',
+  'suporte@helpdesk.com',
+  'usuario@helpdesk.com',
+  'carlos@helpdesk.com',
+  'ana@helpdesk.com',
+];
 
 module.exports = {
   up: async (queryInterface) => {
@@ -13,9 +20,12 @@ module.exports = {
     const senha_hash = await bcrypt.hash('123456', 10);
 
     await queryInterface.bulkInsert('usuarios', [
-      { nome: 'Admin', email: EMAILS[0], perfil: 'admin', senha_hash, created_at: agora, updated_at: agora },
-      { nome: 'Técnico Suporte', email: EMAILS[1], perfil: 'suporte', senha_hash, created_at: agora, updated_at: agora },
-      { nome: 'Usuário Comum', email: EMAILS[2], perfil: 'comum', senha_hash, created_at: agora, updated_at: agora },
+      { nome: 'Admin', email: EMAILS[0], perfil: 'admin', ativo: true, senha_hash, created_at: agora, updated_at: agora },
+      { nome: 'Técnico Suporte', email: EMAILS[1], perfil: 'suporte', ativo: true, senha_hash, created_at: agora, updated_at: agora },
+      { nome: 'Usuário Comum', email: EMAILS[2], perfil: 'comum', ativo: true, senha_hash, created_at: agora, updated_at: agora },
+      { nome: 'Carlos Lima', email: EMAILS[3], perfil: 'suporte', ativo: true, senha_hash, created_at: agora, updated_at: agora },
+      // Conta desativada, para demonstrar o recurso na tela de administração
+      { nome: 'Ana Souza', email: EMAILS[4], perfil: 'comum', ativo: false, senha_hash, created_at: agora, updated_at: agora },
     ]);
 
     const usuarios = await queryInterface.sequelize.query(

@@ -23,6 +23,7 @@ Nasceu da minha rotina como Analista de Suporte N1: a ideia é organizar o ciclo
 - **Fluxo de status**: `aberto` → `em andamento` → `resolvido`
 - **Interações** (mensagens) no histórico de cada chamado
 - **Anexos** (imagens e PDF, até 10 MB) com download autenticado
+- **Tela de administração**: indicadores de chamados e usuários, pendentes mais antigos e gestão de usuários (criar com perfil, promover, ativar/desativar contas)
 - **Controle de acesso por chamado**: o usuário comum vê só os próprios; suporte e admin veem todos
 - **Segurança**: validação de entrada, tratamento central de erros, rate limit no login, Helmet e CORS restrito
 
@@ -34,7 +35,7 @@ Helpdesk-System/
 │   ├── index.js             # Ponto de entrada
 │   └── src/
 │       ├── config/          # Banco, upload (Multer), perfis e status
-│       ├── controllers/     # Auth, Chamado, Interação, Anexo, Usuário
+│       ├── controllers/     # Auth, Chamado, Interação, Anexo, Usuário, Admin
 │       ├── database/        # Conexão, migrations e seeders (Sequelize)
 │       ├── middleware/      # Auth JWT, permissões, acesso ao chamado, erros
 │       ├── models/          # Usuario, Chamado, Interacao, Anexo
@@ -42,8 +43,8 @@ Helpdesk-System/
 │       └── routes.js
 ├── frontend/                # SPA (React + Vite + Tailwind)
 │   └── src/
-│       ├── pages/           # Login, Register, Dashboard, ChamadoDetalhe
-│       ├── components/      # ProtectedRoute, StatusBadge, NovoChamadoModal
+│       ├── pages/           # Login, Register, Dashboard, ChamadoDetalhe, Admin
+│       ├── components/      # AppHeader, rotas protegidas, modais, StatusBadge
 │       └── services/api.js  # Axios com interceptor de token
 └── docker-compose.yml       # MariaDB para desenvolvimento
 ```
@@ -66,8 +67,13 @@ Todas as rotas ficam sob `/api`. "Dono ou equipe" significa o autor do chamado, 
 | POST | `/chamados/:id/interacoes` | Adiciona uma mensagem | Dono ou equipe |
 | POST | `/chamados/:id/anexos` | Envia um anexo (campo `anexo`) | Dono ou equipe |
 | GET | `/chamados/:id/anexos/:anexoId` | Baixa um anexo | Dono ou equipe |
-| GET | `/usuarios` | Lista usuários | Admin |
+| GET | `/admin/resumo` | Indicadores da tela de administração | Admin |
+| GET | `/usuarios` | Lista usuários, com total de chamados de cada um | Admin |
+| POST | `/usuarios` | Cria usuário já com o perfil escolhido | Admin |
 | PUT | `/usuarios/:id/perfil` | Altera o perfil de um usuário | Admin |
+| PUT | `/usuarios/:id/status` | Ativa ou desativa uma conta (`{ "ativo": false }`) | Admin |
+
+Contas desativadas não conseguem entrar e perdem o acesso na hora, mesmo com o token ainda válido. O histórico delas é preservado.
 
 ¹ O dono com perfil `comum` só pode marcar como `resolvido` ou reabrir (`aberto`). Colocar `em andamento` é exclusivo da equipe.
 
@@ -116,6 +122,8 @@ Criados pelo `npm run db:seed`. A senha de todos é `123456`.
 | admin | `admin@helpdesk.com` |
 | suporte | `suporte@helpdesk.com` |
 | comum | `usuario@helpdesk.com` |
+| suporte | `carlos@helpdesk.com` |
+| comum (desativado) | `ana@helpdesk.com` |
 
 ### Comandos úteis (backend)
 
@@ -140,7 +148,7 @@ Para zerar o banco por completo, incluindo o volume do Docker: `docker compose d
 - [x] Controle de acesso por perfil no detalhe do chamado
 - [x] Formulário de abertura de chamado no frontend
 - [ ] Fila de chamados para o perfil `suporte`, com atribuição de responsável
-- [ ] Tela de administração de usuários
+- [x] Tela de administração (indicadores e gestão de usuários)
 - [ ] Prioridade e SLA por chamado
 - [ ] Migração para TypeScript (com Prisma e Zod)
 - [ ] Testes automatizados da API

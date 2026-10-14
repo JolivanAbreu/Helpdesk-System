@@ -3,6 +3,7 @@ import axios from 'axios';
 
 export const TOKEN_KEY = '@HelpDesk:token';
 export const USER_KEY = '@HelpDesk:user';
+export const AVISO_KEY = '@HelpDesk:aviso';
 
 const api = axios.create({
     // Definido em frontend/.env (veja o .env.example). Em produção,
@@ -27,6 +28,8 @@ api.interceptors.response.use(
         if (error.response?.status === 401 && !ehRotaDeLogin) {
             localStorage.removeItem(TOKEN_KEY);
             localStorage.removeItem(USER_KEY);
+            // Guarda o motivo (ex.: "Conta desativada") para a tela de login exibir
+            sessionStorage.setItem(AVISO_KEY, mensagemDeErro(error, 'Sua sessão expirou. Entre novamente.'));
             window.location.href = '/';
         }
         return Promise.reject(error);

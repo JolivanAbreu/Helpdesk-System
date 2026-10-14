@@ -1,14 +1,23 @@
 // src/pages/Login.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import api, { TOKEN_KEY, USER_KEY, mensagemDeErro } from "../services/api";
+import api, { TOKEN_KEY, USER_KEY, AVISO_KEY, mensagemDeErro } from "../services/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [enviando, setEnviando] = useState(false);
   const navigate = useNavigate();
+
+  // Mostra o motivo de a sessão ter sido encerrada (token expirado, conta desativada...)
+  useEffect(() => {
+    const aviso = sessionStorage.getItem(AVISO_KEY);
+    if (aviso) {
+      sessionStorage.removeItem(AVISO_KEY);
+      toast.error(aviso, { id: "aviso-sessao" });
+    }
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();

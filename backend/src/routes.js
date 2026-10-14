@@ -9,6 +9,7 @@ const ChamadoController = require('./controllers/ChamadoController');
 const InteracaoController = require('./controllers/InteracaoController');
 const AnexoController = require('./controllers/AnexoController');
 const UsuarioController = require('./controllers/UsuarioController');
+const AdminController = require('./controllers/AdminController');
 
 const auth = require('./middleware/auth');
 const permission = require('./middleware/permission');
@@ -48,8 +49,11 @@ routes.post('/chamados/:chamado_id/interacoes', chamadoAccess, InteracaoControll
 routes.post('/chamados/:chamado_id/anexos', chamadoAccess, upload.single('anexo'), AnexoController.store);
 routes.get('/chamados/:chamado_id/anexos/:anexo_id', chamadoAccess, AnexoController.download);
 
-// Usuários (somente admin)
+// Administração (somente admin)
+routes.get('/admin/resumo', permission('admin'), AdminController.resumo);
 routes.get('/usuarios', permission('admin'), UsuarioController.index);
+routes.post('/usuarios', permission('admin'), UsuarioController.store);
 routes.put('/usuarios/:usuario_id/perfil', permission('admin'), UsuarioController.updatePerfil);
+routes.put('/usuarios/:usuario_id/status', permission('admin'), UsuarioController.updateStatus);
 
 module.exports = routes;
