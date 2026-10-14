@@ -1,3 +1,39 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-nevoa text-marinho font-sans;
+  }
+
+  /* Foco visível só para quem navega pelo teclado */
+  :focus-visible {
+    @apply outline-none ring-2 ring-azul ring-offset-2 ring-offset-white;
+  }
+
+  ::selection {
+    @apply bg-azul-claro;
+  }
+}
+
+@layer utilities {
+  /* Números alinhados em tabelas e indicadores */
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Respeita quem pediu menos animação no sistema operacional */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

@@ -3,84 +3,59 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api, { TOKEN_KEY, USER_KEY, mensagemDeErro } from "../services/api";
+import AuthLayout from "../components/layout/AuthLayout";
+import Campo, { Input } from "../components/ui/Campo";
+import Button from "../components/ui/Button";
+import CampoSenha from "../components/CampoSenha";
 
 export default function Register() {
-  const [nome, setNome] = useState("");
-  const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
+  const [form, setForm] = useState({ nome: "", email: "", senha: "" });
   const [enviando, setEnviando] = useState(false);
   const navigate = useNavigate();
+
+  const alterar = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   async function handleSubmit(event) {
     event.preventDefault();
     setEnviando(true);
     try {
-      const response = await api.post("/register", { nome, email, senha });
-      // O cadastro já devolve o token, então o usuário entra direto
-      localStorage.setItem(TOKEN_KEY, response.data.token);
-      localStorage.setItem(USER_KEY, JSON.stringify(response.data.usuario));
-      toast.success("Conta criada! Bem-vindo(a).");
-      navigate("/dashboard");
+      const { data } = await api.post("/register", form);
+      // O cadastro já devolve o token, então a pessoa entra direto
+      localStorage.setItem(TOKEN_KEY, data.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(data.usuario));
+      toast.success("Conta criada.");
+      navigate("/chamados");
     } catch (error) {
-      toast.error(mensagemDeErro(error, "Não foi possível concluir o cadastro."));
-    } finally {
+      toast.error(mensagemDeErro(error, "Não foi possível criar a conta."));
       setEnviando(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">
-          Cadastro
-        </h2>
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-gray-700 mb-2">Nome</label>
-            <input
-              type="text"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div className="mb-4">
-            <label className="block text-gray-700 mb-2">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div className="mb-6">
-            <label className="block text-gray-700 mb-2">Senha</label>
-            <input
-              type="password"
-              minLength={6}
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={enviando}
-            className="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition-colors disabled:opacity-60"
-          >
-            {enviando ? "Criando conta..." : "Registrar"}
-          </button>
-        </form>
-        <p className="text-center text-gray-600 mt-4">
-          Já tem uma conta?{" "}
-          <Link to="/" className="text-blue-500 hover:underline">
-            Faça login
-          </Link>
-        </p>
-      </div>
-    </div>
+    <AuthLayout>
+      <h2 className="text-2xl font-semibold tracking-tight">Criar conta</h2>
+      <p className="mt-1 text-sm text-aco">Com a conta você abre chamados e acompanha o atendimento.</p>
+
+      <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+        <Campo rotulo="Nome completo">
+          {(p) => <Input {...p} name="nome" value={form.nome} onChange={alterar} autoComplete="name" minLength={2} required />}
+        </Campo>
+        <Campo rotulo="E-mail corporativo">
+          {(p) => <Input {...p} name="email" type="email" value={form.email} onChange={alterar} autoComplete="email" required />}
+        </Campo>
+        <Campo rotulo="Senha" ajuda="Mínimo de 6 caracteres.">
+          {(p) => (
+            <CampoSenha {...p} name="senha" value={form.senha} onChange={alterar}
+              autoComplete="new-password" minLength={6} required />
+          )}
+        </Campo>
+        <Button type="submit" carregando={enviando} className="w-full justify-center">Criar conta</Button>
+      </form>
+
+      <p className="mt-6 text-sm text-aco">
+        Já tem conta?{" "}
+        <Link to="/" className="font-medium text-azul hover:underline">Entrar</Link>
+      </p>
+    </AuthLayout>
   );
 }

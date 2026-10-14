@@ -1,89 +1,251 @@
 // src/pages/Admin.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import api, { usuarioLogado, mensagemDeErro } from "../services/api";
-import AppHeader from "../components/AppHeader";
-import StatusBadge from "../components/StatusBadge";
+import { UserPlus, Search, Users, CircleCheck } from "lucide-react";
+import api, { mensagemDeErro } from "../services/api";
+import { PERFIS, LISTA_PERFIS, PRIORIDADES, LISTA_PRIORIDADES } from "../config/dominio";
+import { codigoChamado, tempoRelativo, duracaoHoras, dataCurta } from "../utils/formatar";
+import Cabecalho from "../components/layout/Cabecalho";
+import Button from "../components/ui/Button";
+import { Input, Select } from "../components/ui/Campo";
+import { ConfirmarModal } from "../components/ui/Modal";
+import { Avatar, PrioridadeSelo, StatusSelo } from "../components/ui/Selos";
+import { Esqueleto, Vazio } from "../components/ui/Estados";
+import GraficoPorDia from "../components/admin/GraficoPorDia";
 import NovoUsuarioModal from "../components/NovoUsuarioModal";
 
-const PERFIS = ["comum", "suporte", "admin"];
+const ABAS = [
+  { id: "visao-geral", rotulo: "Visão geral" },
+  { id: "usuarios", rotulo: "Usuários" },
+];
 
-// "há 3 dias", "há 5 horas"...
-function tempoDesde(data) {
-  const minutos = Math.floor((Date.now() - new Date(data)) / 60000);
-  if (minutos < 60) return `há ${Math.max(minutos, 1)} min`;
-  const horas = Math.floor(minutos / 60);
-  if (horas < 24) return `há ${horas} h`;
-  const dias = Math.floor(horas / 24);
-  return `há ${dias} dia${dias > 1 ? "s" : ""}`;
+export default function Admin() {
+  const [params, setParams] = useSearchParams();
+  const aba = params.get("aba") === "usuarios" ? "usuarios" : "visao-geral";
+
+  return (
+    <>
+      <Cabecalho titulo="Administração" descricao="Acompanhe o atendimento e gerencie quem usa o sistema." />
+      <div className="mb-6 border-b border-borda">
+        <nav className="flex gap-1" aria-label="Seções da administração">
+          {ABAS.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setParams(a.id === "usuarios" ? { aba: "usuarios" } : {}, { replace: true })}
+              aria-current={aba === a.id ? "page" : undefined}
+              className={`border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+                aba === a.id ? "border-azul text-marinho" : "border-transparent text-aco hover:text-marinho"
+              }`}
+            >
+              {a.rotulo}
+            </button>
+          ))}
+        </nav>
+      </div>
+      {aba === "usuarios" ? <GestaoUsuarios /> : <VisaoGeral />}
+    </>
+  );
 }
 
-function Indicador({ titulo, valor, detalhe, destaque }) {
+/* ---------------------------- Visão geral ---------------------------- */
+
+function VisaoGeral() {
+  const [resumo, setResumo] = useState(null);
+
+  useEffect(() => {
+    // fuso: os dias do gráfico seguem o horário de quem está vendo
+    api.get("/admin/resumo", { params: { fuso: new Date().getTimezoneOffset() } })
+      .then(({ data }) => setResumo(data))
+      .catch((error) => toast.error(mensagemDeErro(error, "Erro ao carregar os indicadores.")));
+  }, []);
+
+  if (!resumo) {
+    return (
+      <div className="space-y-6" role="status" aria-label="Carregando indicadores">
+        <Esqueleto className="h-28 rounded-lg" />
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <Esqueleto className="h-80 rounded-lg" />
+          <Esqueleto className="h-80 rounded-lg" />
+        </div>
+      </div>
+    );
+  }
+
+  const { chamados, resolucao } = resumo;
+  const pendentes = chamados.porStatus.aberto + chamados.porStatus["em andamento"];
+
   return (
-    <div className="bg-white rounded-lg shadow-md p-5">
-      <p className="text-sm text-gray-500">{titulo}</p>
-      <p className={`text-3xl font-bold mt-1 ${destaque || "text-gray-800"}`}>{valor}</p>
-      {detalhe && <p className="text-xs text-gray-500 mt-2">{detalhe}</p>}
+    <div className="space-y-6">
+      {/* Faixa de métricas */}
+      <section className="grid grid-cols-2 overflow-hidden rounded-lg border border-borda bg-white shadow-painel lg:grid-cols-4" aria-label="Indicadores">
+        <Metrica rotulo="Pendentes" valor={pendentes} detalhe={`${chamados.semResponsavel} sem responsável`} alerta={chamados.semResponsavel > 0} />
+        <Metrica rotulo="Em andamento" valor={chamados.porStatus["em andamento"]} detalhe={`${chamados.porStatus.aberto} aguardando início`} />
+        <Metrica rotulo={`Resolvidos em ${resolucao.periodoDias} dias`} valor={resolucao.resolvidos} detalhe={`${chamados.total} chamados no total`} />
+        <Metrica rotulo="Tempo médio de resolução" valor={duracaoHoras(resolucao.horasMedias)} detalhe={`Nos últimos ${resolucao.periodoDias} dias`} />
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <GraficoPorDia dados={resumo.porDia} />
+        <PendentesPorPrioridade valores={chamados.pendentesPorPrioridade} total={pendentes} />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <DesempenhoEquipe equipe={resumo.equipe} />
+        <PendentesAntigos chamados={resumo.pendentesMaisAntigos} />
+      </div>
     </div>
   );
 }
 
-export default function Admin() {
-  const eu = usuarioLogado();
-  const [resumo, setResumo] = useState(null);
-  const [usuarios, setUsuarios] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+function Metrica({ rotulo, valor, detalhe, alerta }) {
+  return (
+    <div className="border-borda p-5 [&:not(:last-child)]:border-r max-lg:[&:nth-child(2)]:border-r-0 max-lg:[&:nth-child(-n+2)]:border-b">
+      <p className="text-sm text-aco">{rotulo}</p>
+      <p className="num mt-1 text-3xl font-semibold tracking-tight">{valor}</p>
+      {detalhe && (
+        <p className={`mt-1 text-xs ${alerta ? "font-medium text-prioridade-alta" : "text-aco"}`}>{detalhe}</p>
+      )}
+    </div>
+  );
+}
+
+// Barras horizontais simples: o valor fica na ponta de cada barra
+function PendentesPorPrioridade({ valores, total }) {
+  const maximo = Math.max(1, ...Object.values(valores));
+  return (
+    <section className="rounded-lg border border-borda bg-white p-5 shadow-painel">
+      <h2 className="font-semibold">Pendentes por prioridade</h2>
+      <p className="mt-1 text-sm text-aco">{total} chamados aguardando solução</p>
+      <ul className="mt-6 space-y-4">
+        {LISTA_PRIORIDADES.map((p) => (
+          <li key={p} className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3">
+            <PrioridadeSelo prioridade={p} />
+            <div className="flex items-center gap-2" title={`${PRIORIDADES[p].rotulo}: ${valores[p]} pendente(s)`}>
+              <div className="h-3 flex-1 rounded-sm bg-nevoa">
+                <div
+                  className={`h-3 rounded-r-[4px] rounded-l-sm ${PRIORIDADES[p].cor}`}
+                  style={{ width: `${(valores[p] / maximo) * 100}%` }}
+                />
+              </div>
+              <span className="num w-6 text-right text-sm font-medium">{valores[p]}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function DesempenhoEquipe({ equipe }) {
+  return (
+    <section className="rounded-lg border border-borda bg-white shadow-painel">
+      <div className="p-5 pb-3">
+        <h2 className="font-semibold">Equipe de suporte</h2>
+        <p className="mt-1 text-sm text-aco">Carga atual e entregas nos últimos 30 dias</p>
+      </div>
+      <div className="relative overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="border-y border-borda bg-nevoa/60 text-left text-xs text-aco">
+            <tr>
+              <th className="px-5 py-2 font-medium">Técnico</th>
+              <th className="px-3 py-2 text-right font-medium">Pendentes</th>
+              <th className="px-3 py-2 text-right font-medium">Resolvidos</th>
+              <th className="px-5 py-2 text-right font-medium">Tempo médio</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-borda">
+            {equipe.map((m) => (
+              <tr key={m.id}>
+                <td className="px-5 py-3">
+                  <span className="flex items-center gap-2.5">
+                    <Avatar nome={m.nome} tamanho="sm" />
+                    <span className="font-medium">{m.nome}</span>
+                  </span>
+                </td>
+                <td className="num px-3 py-3 text-right">{m.pendentes}</td>
+                <td className="num px-3 py-3 text-right">{m.resolvidos}</td>
+                <td className="num px-5 py-3 text-right text-aco">{m.horasMedias === null ? "—" : duracaoHoras(m.horasMedias)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function PendentesAntigos({ chamados }) {
+  return (
+    <section className="rounded-lg border border-borda bg-white shadow-painel">
+      <div className="p-5 pb-3">
+        <h2 className="font-semibold">Pendentes há mais tempo</h2>
+        <p className="mt-1 text-sm text-aco">Chamados não resolvidos, do mais antigo para o mais novo</p>
+      </div>
+      {chamados.length === 0 ? (
+        <Vazio icone={CircleCheck} titulo="Nenhum chamado pendente" texto="A fila está em dia." />
+      ) : (
+        <ul className="divide-y divide-borda border-t border-borda">
+          {chamados.map((c) => (
+            <li key={c.id} className="relative flex hover:bg-nevoa/50">
+              <span className={`w-1 shrink-0 ${PRIORIDADES[c.prioridade]?.cor}`} aria-hidden="true" />
+              <div className="flex min-w-0 flex-1 items-center gap-4 px-5 py-3">
+                <div className="min-w-0 flex-1">
+                  <Link to={`/chamado/${c.id}`} className="font-medium after:absolute after:inset-0">
+                    <span className="num mr-2 text-xs font-normal text-aco">{codigoChamado(c.id)}</span>
+                    {c.titulo}
+                  </Link>
+                  <p className="mt-0.5 truncate text-xs text-aco">
+                    Aberto {tempoRelativo(c.createdAt)}, {c.responsavel ? `com ${c.responsavel.nome}` : "sem responsável"}
+                  </p>
+                </div>
+                <StatusSelo status={c.status} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/* --------------------------- Gestão de usuários --------------------------- */
+
+function GestaoUsuarios() {
+  const { user: eu } = useOutletContext();
+  const [usuarios, setUsuarios] = useState(null);
   const [busca, setBusca] = useState("");
-  const [filtroPerfil, setFiltroPerfil] = useState("todos");
-  const [filtroSituacao, setFiltroSituacao] = useState("todos");
-  const [modalAberto, setModalAberto] = useState(false);
+  const [filtroPerfil, setFiltroPerfil] = useState("");
+  const [filtroSituacao, setFiltroSituacao] = useState("");
+  const [novoAberto, setNovoAberto] = useState(false);
   const [salvandoId, setSalvandoId] = useState(null);
+  const [confirmar, setConfirmar] = useState(null); // usuário a desativar
 
-  async function carregar() {
-    try {
-      const [r, u] = await Promise.all([api.get("/admin/resumo"), api.get("/usuarios")]);
-      setResumo(r.data);
-      setUsuarios(u.data);
-    } catch (error) {
-      toast.error(mensagemDeErro(error, "Erro ao carregar a administração."));
-    } finally {
-      setCarregando(false);
-    }
-  }
-
-  // Os indicadores dependem dos usuários, então são recarregados após cada alteração
-  const recarregarResumo = () =>
-    api.get("/admin/resumo").then(({ data }) => setResumo(data)).catch(() => {});
-
-  useEffect(() => {
-    carregar();
+  const carregar = useCallback(() => {
+    api.get("/usuarios")
+      .then(({ data }) => setUsuarios(data))
+      .catch((error) => toast.error(mensagemDeErro(error, "Erro ao carregar os usuários.")));
   }, []);
+  useEffect(() => { carregar(); }, [carregar]);
 
-  const usuariosFiltrados = useMemo(() => {
+  const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
-    return usuarios.filter((u) => {
-      if (filtroPerfil !== "todos" && u.perfil !== filtroPerfil) return false;
-      if (filtroSituacao === "ativos" && !u.ativo) return false;
-      if (filtroSituacao === "inativos" && u.ativo) return false;
-      if (termo && !`${u.nome} ${u.email}`.toLowerCase().includes(termo)) return false;
-      return true;
-    });
+    return (usuarios ?? []).filter((u) =>
+      (!filtroPerfil || u.perfil === filtroPerfil) &&
+      (!filtroSituacao || (filtroSituacao === "ativos" ? u.ativo : !u.ativo)) &&
+      (!termo || `${u.nome} ${u.email}`.toLowerCase().includes(termo))
+    );
   }, [usuarios, busca, filtroPerfil, filtroSituacao]);
 
-  function substituir(atualizado) {
-    setUsuarios((lista) =>
-      lista.map((u) => (u.id === atualizado.id ? { ...u, ...atualizado } : u))
-    );
-  }
+  const substituir = (atualizado) =>
+    setUsuarios((lista) => lista.map((u) => (u.id === atualizado.id ? { ...u, ...atualizado } : u)));
 
   async function alterarPerfil(usuario, perfil) {
     setSalvandoId(usuario.id);
     try {
       const { data } = await api.put(`/usuarios/${usuario.id}/perfil`, { perfil });
       substituir(data);
-      recarregarResumo();
-      toast.success(`${data.nome} agora é ${data.perfil}.`);
+      toast.success(`${data.nome} agora é ${PERFIS[data.perfil].rotulo.toLowerCase()}.`);
     } catch (error) {
       toast.error(mensagemDeErro(error, "Não foi possível alterar o perfil."));
     } finally {
@@ -91,17 +253,13 @@ export default function Admin() {
     }
   }
 
-  async function alternarAtivo(usuario) {
-    const ativo = !usuario.ativo;
-    if (!ativo && !window.confirm(`Desativar a conta de ${usuario.nome}? A pessoa perde o acesso imediatamente.`)) {
-      return;
-    }
+  async function alterarSituacao(usuario, ativo) {
     setSalvandoId(usuario.id);
     try {
       const { data } = await api.put(`/usuarios/${usuario.id}/status`, { ativo });
       substituir(data);
-      recarregarResumo();
       toast.success(`Conta de ${data.nome} ${data.ativo ? "reativada" : "desativada"}.`);
+      setConfirmar(null);
     } catch (error) {
       toast.error(mensagemDeErro(error, "Não foi possível alterar a conta."));
     } finally {
@@ -109,190 +267,117 @@ export default function Admin() {
     }
   }
 
-  function handleCriado(novo) {
-    setModalAberto(false);
-    setUsuarios((lista) => [...lista, novo].sort((a, b) => a.nome.localeCompare(b.nome)));
-    recarregarResumo();
-  }
-
   return (
-    <div className="min-h-screen bg-gray-100">
-      <AppHeader />
+    <section className="rounded-lg border border-borda bg-white shadow-painel">
+      <div className="flex flex-wrap items-center gap-3 p-5">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-aco" aria-hidden="true" />
+          <Input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou e-mail" aria-label="Buscar usuários" className="pl-9" />
+        </div>
+        <Select value={filtroPerfil} onChange={(e) => setFiltroPerfil(e.target.value)} aria-label="Filtrar por perfil" className="w-auto">
+          <option value="">Todos os perfis</option>
+          {LISTA_PERFIS.map((p) => <option key={p} value={p}>{PERFIS[p].rotulo}</option>)}
+        </Select>
+        <Select value={filtroSituacao} onChange={(e) => setFiltroSituacao(e.target.value)} aria-label="Filtrar por situação" className="w-auto">
+          <option value="">Ativos e desativados</option>
+          <option value="ativos">Só ativos</option>
+          <option value="inativos">Só desativados</option>
+        </Select>
+        <Button icone={UserPlus} onClick={() => setNovoAberto(true)}>Novo usuário</Button>
+      </div>
 
-      <main className="p-4 sm:p-8 space-y-8">
-        <h1 className="text-2xl font-semibold text-gray-700">Administração</h1>
-
-        {carregando || !resumo ? (
-          <p className="text-gray-600">Carregando...</p>
-        ) : (
-          <>
-            {/* Indicadores */}
-            <section aria-label="Indicadores" className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <Indicador titulo="Chamados" valor={resumo.chamados.total} detalhe="total registrado" />
-              <Indicador titulo="Abertos" valor={resumo.chamados.porStatus.aberto} destaque="text-blue-700" detalhe="aguardando atendimento" />
-              <Indicador titulo="Em andamento" valor={resumo.chamados.porStatus["em andamento"]} destaque="text-amber-700" />
-              <Indicador titulo="Resolvidos" valor={resumo.chamados.porStatus.resolvido} destaque="text-green-700" />
-              <Indicador
-                titulo="Usuários ativos"
-                valor={resumo.usuarios.ativos}
-                detalhe={`${resumo.usuarios.porPerfil.comum} comum · ${resumo.usuarios.porPerfil.suporte} suporte · ${resumo.usuarios.porPerfil.admin} admin${
-                  resumo.usuarios.inativos ? ` · ${resumo.usuarios.inativos} desativado(s)` : ""
-                }`}
-              />
-            </section>
-
-            {/* Pendentes mais antigos */}
-            <section className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-lg font-semibold text-gray-800 mb-1">Pendentes há mais tempo</h2>
-              <p className="text-sm text-gray-500 mb-4">Chamados abertos ou em andamento, do mais antigo para o mais novo.</p>
-              {resumo.pendentesMaisAntigos.length === 0 ? (
-                <p className="text-gray-600">Nenhum chamado pendente. 🎉</p>
-              ) : (
-                <ul className="divide-y">
-                  {resumo.pendentesMaisAntigos.map((c) => (
-                    <li key={c.id}>
-                      <Link
-                        to={`/chamado/${c.id}`}
-                        className="flex justify-between items-center gap-4 py-3 px-2 rounded-md hover:bg-gray-50"
+      {!usuarios ? (
+        <div className="space-y-3 p-5 pt-0">{[1, 2, 3, 4].map((i) => <Esqueleto key={i} className="h-12" />)}</div>
+      ) : filtrados.length === 0 ? (
+        <Vazio icone={Users} titulo="Nenhum usuário encontrado" texto="Ajuste a busca ou os filtros." />
+      ) : (
+        <div className="relative overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-y border-borda bg-nevoa/60 text-left text-xs text-aco">
+              <tr>
+                <th className="px-5 py-2 font-medium">Usuário</th>
+                <th className="px-3 py-2 font-medium">Perfil</th>
+                <th className="px-3 py-2 text-right font-medium">Chamados</th>
+                <th className="px-3 py-2 font-medium">Desde</th>
+                <th className="px-3 py-2 font-medium">Situação</th>
+                <th className="px-5 py-2"><span className="sr-only">Ações</span></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-borda">
+              {filtrados.map((u) => {
+                const souEu = u.id === eu?.id;
+                return (
+                  <tr key={u.id} className={u.ativo ? "" : "bg-nevoa/40"}>
+                    <td className="px-5 py-3">
+                      <span className={`flex items-center gap-3 ${u.ativo ? "" : "opacity-60"}`}>
+                        <Avatar nome={u.nome} />
+                        <span className="min-w-0">
+                          <span className="block font-medium">
+                            {u.nome}
+                            {souEu && <span className="ml-2 text-xs font-normal text-aco">você</span>}
+                          </span>
+                          <span className="block text-xs text-aco">{u.email}</span>
+                        </span>
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <Select
+                        value={u.perfil}
+                        onChange={(e) => alterarPerfil(u, e.target.value)}
+                        disabled={souEu || salvandoId === u.id}
+                        aria-label={`Perfil de ${u.nome}`}
+                        title={souEu ? "Você não pode alterar o seu próprio perfil" : undefined}
+                        className="h-9 w-40"
                       >
-                        <div className="min-w-0">
-                          <p className="font-medium text-gray-800 truncate">#{c.id} · {c.titulo}</p>
-                          <p className="text-xs text-gray-500">
-                            {c.usuario?.nome ?? "Usuário removido"} · aberto {tempoDesde(c.createdAt)}
-                          </p>
-                        </div>
-                        <StatusBadge status={c.status} />
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            {/* Usuários */}
-            <section className="bg-white rounded-lg shadow-md p-6">
-              <div className="flex flex-wrap gap-3 justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold text-gray-800">Usuários</h2>
-                <button
-                  onClick={() => setModalAberto(true)}
-                  className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors"
-                >
-                  Novo usuário
-                </button>
-              </div>
-
-              <div className="flex flex-wrap gap-3 mb-4">
-                <input
-                  type="search"
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                  placeholder="Buscar por nome ou e-mail"
-                  aria-label="Buscar usuários"
-                  className="flex-1 min-w-[200px] px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <select
-                  value={filtroPerfil}
-                  onChange={(e) => setFiltroPerfil(e.target.value)}
-                  aria-label="Filtrar por perfil"
-                  className="px-3 py-2 border rounded-lg"
-                >
-                  <option value="todos">Todos os perfis</option>
-                  {PERFIS.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-                <select
-                  value={filtroSituacao}
-                  onChange={(e) => setFiltroSituacao(e.target.value)}
-                  aria-label="Filtrar por situação"
-                  className="px-3 py-2 border rounded-lg"
-                >
-                  <option value="todos">Ativos e desativados</option>
-                  <option value="ativos">Só ativos</option>
-                  <option value="inativos">Só desativados</option>
-                </select>
-              </div>
-
-              <div className="relative overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-gray-500 border-b">
-                    <tr>
-                      <th className="py-2 pr-4 font-medium">Usuário</th>
-                      <th className="py-2 pr-4 font-medium">Perfil</th>
-                      <th className="py-2 pr-4 font-medium text-right">Chamados</th>
-                      <th className="py-2 pr-4 font-medium">Desde</th>
-                      <th className="py-2 pr-4 font-medium">Situação</th>
-                      <th className="py-2 font-medium"><span className="sr-only">Ações</span></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {usuariosFiltrados.map((u) => {
-                      const souEu = u.id === eu?.id;
-                      const salvando = salvandoId === u.id;
-                      return (
-                        <tr key={u.id} className={u.ativo ? "" : "text-gray-400"}>
-                          <td className="py-3 pr-4">
-                            <p className="font-medium text-gray-800">
-                              {u.nome}
-                              {souEu && <span className="ml-2 text-xs text-gray-500">(você)</span>}
-                            </p>
-                            <p className="text-gray-500">{u.email}</p>
-                          </td>
-                          <td className="py-3 pr-4">
-                            <select
-                              value={u.perfil}
-                              onChange={(e) => alterarPerfil(u, e.target.value)}
-                              disabled={souEu || salvando}
-                              aria-label={`Perfil de ${u.nome}`}
-                              title={souEu ? "Você não pode alterar o seu próprio perfil" : undefined}
-                              className="px-2 py-1 border rounded-md bg-white disabled:bg-gray-50 disabled:text-gray-500"
-                            >
-                              {PERFIS.map((p) => <option key={p} value={p}>{p}</option>)}
-                            </select>
-                          </td>
-                          <td className="py-3 pr-4 text-right tabular-nums">{u.total_chamados}</td>
-                          <td className="py-3 pr-4 whitespace-nowrap">
-                            {new Date(u.createdAt).toLocaleDateString("pt-BR")}
-                          </td>
-                          <td className="py-3 pr-4">
-                            <span
-                              className={`text-xs font-medium px-2 py-1 rounded-full ${
-                                u.ativo ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-600"
-                              }`}
-                            >
-                              {u.ativo ? "ativo" : "desativado"}
-                            </span>
-                          </td>
-                          <td className="py-3 text-right">
-                            {!souEu && (
-                              <button
-                                onClick={() => alternarAtivo(u)}
-                                disabled={salvando}
-                                className={`text-sm px-3 py-1 rounded-md border whitespace-nowrap disabled:opacity-60 ${
-                                  u.ativo
-                                    ? "text-red-600 border-red-200 hover:bg-red-50"
-                                    : "text-green-700 border-green-200 hover:bg-green-50"
-                                }`}
-                              >
-                                {u.ativo ? "Desativar" : "Reativar"}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {usuariosFiltrados.length === 0 && (
-                  <p className="text-gray-500 py-6 text-center">Nenhum usuário encontrado com esses filtros.</p>
-                )}
-              </div>
-            </section>
-          </>
-        )}
-      </main>
-
-      {modalAberto && (
-        <NovoUsuarioModal onFechar={() => setModalAberto(false)} onCriado={handleCriado} />
+                        {LISTA_PERFIS.map((p) => <option key={p} value={p}>{PERFIS[p].rotulo}</option>)}
+                      </Select>
+                    </td>
+                    <td className="num px-3 py-3 text-right">{u.total_chamados}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-aco">{dataCurta(u.createdAt)}</td>
+                    <td className="px-3 py-3">
+                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${u.ativo ? "text-emerald-800" : "text-aco"}`}>
+                        <span className={`h-2 w-2 rounded-full ${u.ativo ? "bg-emerald-600" : "bg-aco/50"}`} aria-hidden="true" />
+                        {u.ativo ? "Ativo" : "Desativado"}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      {!souEu && (u.ativo ? (
+                        <Button variante="perigo" tamanho="sm" onClick={() => setConfirmar(u)}>Desativar</Button>
+                      ) : (
+                        <Button variante="secundario" tamanho="sm" carregando={salvandoId === u.id} onClick={() => alterarSituacao(u, true)}>
+                          Reativar
+                        </Button>
+                      ))}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
-    </div>
+
+      {novoAberto && (
+        <NovoUsuarioModal
+          onFechar={() => setNovoAberto(false)}
+          onCriado={(novo) => {
+            setNovoAberto(false);
+            setUsuarios((lista) => [...lista, novo].sort((a, b) => a.nome.localeCompare(b.nome)));
+          }}
+        />
+      )}
+
+      {confirmar && (
+        <ConfirmarModal
+          titulo={`Desativar a conta de ${confirmar.nome}?`}
+          mensagem="A pessoa perde o acesso imediatamente, mesmo que esteja com o sistema aberto. Os chamados e mensagens dela continuam no histórico, e você pode reativar a conta depois."
+          rotuloConfirmar="Desativar conta"
+          perigo
+          carregando={salvandoId === confirmar.id}
+          onConfirmar={() => alterarSituacao(confirmar, false)}
+          onFechar={() => setConfirmar(null)}
+        />
+      )}
+    </section>
   );
 }

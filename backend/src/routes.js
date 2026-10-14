@@ -41,6 +41,11 @@ routes.get('/chamados', ChamadoController.index);
 routes.post('/chamados', ChamadoController.store);
 routes.get('/chamados/:chamado_id', chamadoAccess, ChamadoController.show);
 routes.put('/chamados/:chamado_id/status', chamadoAccess, ChamadoController.update);
+routes.put('/chamados/:chamado_id/prioridade', permission('suporte', 'admin'), chamadoAccess, ChamadoController.updatePrioridade);
+routes.put('/chamados/:chamado_id/responsavel', permission('suporte', 'admin'), chamadoAccess, ChamadoController.updateResponsavel);
+
+// Técnicos que podem receber chamados (seletor de responsável)
+routes.get('/equipe', permission('suporte', 'admin'), ChamadoController.equipe);
 
 // Interações
 routes.post('/chamados/:chamado_id/interacoes', chamadoAccess, InteracaoController.store);

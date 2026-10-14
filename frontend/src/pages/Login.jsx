@@ -3,6 +3,18 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api, { TOKEN_KEY, USER_KEY, AVISO_KEY, mensagemDeErro } from "../services/api";
+import AuthLayout from "../components/layout/AuthLayout";
+import Campo, { Input } from "../components/ui/Campo";
+import Button from "../components/ui/Button";
+import CampoSenha from "../components/CampoSenha";
+
+// Contas do seed, exibidas só quando VITE_MODO_DEMO=true (útil em portfólio)
+const CONTAS_DEMO = [
+  { perfil: "Colaborador", email: "usuario@helpdesk.com" },
+  { perfil: "Suporte", email: "suporte@helpdesk.com" },
+  { perfil: "Administrador", email: "admin@helpdesk.com" },
+];
+const MODO_DEMO = import.meta.env.VITE_MODO_DEMO === "true";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -19,65 +31,68 @@ export default function Login() {
     }
   }, []);
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  async function entrar(credenciais) {
     setEnviando(true);
     try {
-      const response = await api.post("/login", { email, senha });
-
-      localStorage.setItem(TOKEN_KEY, response.data.token);
-      localStorage.setItem(USER_KEY, JSON.stringify(response.data.usuario));
-
-      navigate("/dashboard");
+      const { data } = await api.post("/login", credenciais);
+      localStorage.setItem(TOKEN_KEY, data.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(data.usuario));
+      navigate("/chamados");
     } catch (error) {
       toast.error(mensagemDeErro(error, "Não foi possível entrar."));
-    } finally {
       setEnviando(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">
-          Login
-        </h2>
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-gray-700 mb-2">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
+    <AuthLayout>
+      <h2 className="text-2xl font-semibold tracking-tight">Entrar</h2>
+      <p className="mt-1 text-sm text-aco">Use o e-mail e a senha da sua conta.</p>
+
+      <form
+        onSubmit={(e) => { e.preventDefault(); entrar({ email, senha }); }}
+        className="mt-8 space-y-4"
+      >
+        <Campo rotulo="E-mail">
+          {(p) => (
+            <Input {...p} type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email" required />
+          )}
+        </Campo>
+        <Campo rotulo="Senha">
+          {(p) => (
+            <CampoSenha {...p} value={senha} onChange={(e) => setSenha(e.target.value)}
+              autoComplete="current-password" required />
+          )}
+        </Campo>
+        <Button type="submit" carregando={enviando} className="w-full justify-center">Entrar</Button>
+      </form>
+
+      <p className="mt-6 text-sm text-aco">
+        Ainda não tem conta?{" "}
+        <Link to="/register" className="font-medium text-azul hover:underline">Criar conta</Link>
+      </p>
+
+      {MODO_DEMO && (
+        <div className="mt-10 rounded-md border border-borda p-4">
+          <p className="text-sm font-medium">Contas de demonstração</p>
+          <p className="mt-0.5 text-xs text-aco">Senha de todas: 123456. Clique para entrar.</p>
+          <div className="mt-3 grid gap-2">
+            {CONTAS_DEMO.map((conta) => (
+              <button
+                key={conta.email}
+                type="button"
+                disabled={enviando}
+                onClick={() => entrar({ email: conta.email, senha: "123456" })}
+                className="flex items-center justify-between rounded-md bg-nevoa px-3 py-2 text-left text-sm hover:bg-azul-claro disabled:opacity-60"
+              >
+                <span className="font-medium">{conta.perfil}</span>
+                <span className="text-xs text-aco">{conta.email}</span>
+              </button>
+            ))}
           </div>
-          <div className="mb-6">
-            <label className="block text-gray-700 mb-2">Senha</label>
-            <input
-              type="password"
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={enviando}
-            className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-60"
-          >
-            {enviando ? "Entrando..." : "Entrar"}
-          </button>
-        </form>
-        <p className="text-center text-gray-600 mt-4">
-          Não tem uma conta?{" "}
-          <Link to="/register" className="text-blue-500 hover:underline">
-            Registre-se
-          </Link>
-        </p>
-      </div>
-    </div>
+        </div>
+      )}
+    </AuthLayout>
   );
 }
