@@ -1,98 +1,76 @@
 // src/controllers/ChamadoController.js
 const Chamado = require('../models/Chamado');
-const Usuario = require('../models/Usuario');
 const Interacao = require('../models/Interacao');
+const { STATUS_CHAMADO, isEquipe } = require('../config/perfis');
+const { texto, validarChamado } = require('../utils/validacao');
+
+// Status que o próprio dono (perfil comum) pode definir:
+// encerrar o chamado ou reabri-lo. "em andamento" é só da equipe.
+const STATUS_PERMITIDOS_DONO = ['aberto', 'resolvido'];
 
 module.exports = {
+  // Detalhes do chamado, com interações e anexos.
+  // O acesso já foi validado pelo middleware chamadoAccess.
   async show(req, res) {
-    try {
-      const { chamado_id } = req.params;
-      const chamado = await Chamado.findByPk(chamado_id, {
-        include: [
-          { association: 'usuario', attributes: ['id', 'nome', 'email'] },
-          {
-            association: 'interacoes',
-            include: { association: 'usuario', attributes: ['id', 'nome'] }
-          },
-          { association: 'anexos' },
-        ],
-        order: [[{ model: Interacao, as: 'interacoes' }, 'createdAt', 'ASC']]
-      });
-
-      if (!chamado) {
-        return res.status(404).send({ error: 'Chamado não encontrado' });
-      }
-
-      return res.json(chamado);
-    } catch (error) {
-      return res.status(400).send({ error: 'Erro ao buscar detalhes do chamado.' });
-    }
-  },
-
-  // Listar chamados do usuário logado
-  async index(req, res) {
-    try {
-      const chamados = await Chamado.findAll({
-        where: {
-          usuario_id: req.userId,
+    const chamado = await Chamado.findByPk(req.chamado.id, {
+      include: [
+        { association: 'usuario', attributes: ['id', 'nome', 'email'] },
+        {
+          association: 'interacoes',
+          include: { association: 'usuario', attributes: ['id', 'nome', 'perfil'] },
         },
-        include: { association: 'usuario', attributes: ['nome', 'email'] },
-        order: [['created_at', 'DESC']]
-      });
+        { association: 'anexos', attributes: ['id', 'nome_original', 'createdAt'] },
+      ],
+      order: [[{ model: Interacao, as: 'interacoes' }, 'createdAt', 'ASC']],
+    });
 
-      return res.json(chamados);
-    } catch (error) {
-      return res.status(400).send({ error: 'Erro ao listar chamados.' });
-    }
+    return res.json(chamado);
   },
 
-  // Criar um novo chamado
+  // Perfil comum vê só os próprios chamados; suporte e admin veem todos.
+  async index(req, res) {
+    const where = isEquipe(req.user) ? {} : { usuario_id: req.userId };
+
+    const chamados = await Chamado.findAll({
+      where,
+      include: { association: 'usuario', attributes: ['id', 'nome', 'email'] },
+      order: [['createdAt', 'DESC']],
+    });
+
+    return res.json(chamados);
+  },
+
   async store(req, res) {
-    const { titulo, descricao } = req.body;
-
-    try {
-      const chamado = await Chamado.create({
-        titulo,
-        descricao,
-        usuario_id: req.userId,
-      });
-
-      return res.status(201).json(chamado);
-    } catch (error) {
-      return res.status(400).send({ error: 'Erro ao criar novo chamado.' });
+    const erro = validarChamado(req.body);
+    if (erro) {
+      return res.status(400).json({ error: erro });
     }
+
+    const chamado = await Chamado.create({
+      titulo: texto(req.body.titulo),
+      descricao: texto(req.body.descricao),
+      status: 'aberto',
+      usuario_id: req.userId,
+    });
+
+    return res.status(201).json(chamado);
   },
 
-  // Alterar status do chamado
   async update(req, res) {
-    const { chamado_id } = req.params;
     const { status } = req.body;
-    const validStatus = ['aberto', 'em andamento', 'resolvido'];
+    const { chamado } = req;
 
-    if (!validStatus.includes(status)) {
-      return res.status(400).send({ error: 'Status inválido.' });
+    if (!STATUS_CHAMADO.includes(status)) {
+      return res.status(400).json({ error: `Status inválido. Use: ${STATUS_CHAMADO.join(', ')}.` });
     }
 
-    try {
-      const chamado = await Chamado.findByPk(chamado_id);
-
-      if (!chamado) {
-        return res.status(404).send({ error: 'Chamado não encontrado.' });
-      }
-
-      const usuario = await Usuario.findByPk(req.userId);
-      if (chamado.usuario_id !== req.userId && usuario.perfil === 'comum') {
-        return res.status(403).send({ error: 'Acesso negado. Você não é o dono deste chamado.' });
-      }
-
-      chamado.status = status;
-      await chamado.save();
-
-      return res.json(chamado);
-    } catch (error) {
-      return res.status(400).send({ error: 'Erro ao atualizar chamado.' });
+    if (!isEquipe(req.user) && !STATUS_PERMITIDOS_DONO.includes(status)) {
+      return res.status(403).json({ error: 'Apenas a equipe de suporte pode colocar o chamado em andamento.' });
     }
+
+    chamado.status = status;
+    await chamado.save();
+
+    return res.json(chamado);
   },
-
-
 };

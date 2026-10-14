@@ -18,12 +18,13 @@ Nasceu da minha rotina como Analista de Suporte N1: a ideia é organizar o ciclo
 ## ✨ Funcionalidades
 
 - **Cadastro e login** com senha criptografada (bcrypt) e token **JWT**
-- **Perfis de acesso** (`comum`, `suporte`, `admin`) com middleware de permissão por rota
+- **Perfis de acesso** (`comum`, `suporte`, `admin`): todo cadastro entra como `comum` e só o admin promove usuários
 - **Abertura de chamados** com título e descrição
 - **Fluxo de status**: `aberto` → `em andamento` → `resolvido`
 - **Interações** (mensagens) no histórico de cada chamado
-- **Anexos** (imagens e PDF, até 10 MB) com upload via Multer
-- **Rotas protegidas** no frontend e notificações com React Hot Toast
+- **Anexos** (imagens e PDF, até 10 MB) com download autenticado
+- **Controle de acesso por chamado**: o usuário comum vê só os próprios; suporte e admin veem todos
+- **Segurança**: validação de entrada, tratamento central de erros, rate limit no login, Helmet e CORS restrito
 
 ## 🏗️ Arquitetura
 
@@ -32,16 +33,17 @@ Helpdesk-System/
 ├── backend/                 # API REST (Node.js + Express)
 │   ├── index.js             # Ponto de entrada
 │   └── src/
-│       ├── config/          # Banco de dados e upload (Multer)
+│       ├── config/          # Banco, upload (Multer), perfis e status
 │       ├── controllers/     # Auth, Chamado, Interação, Anexo, Usuário
-│       ├── database/        # Conexão e migrations (Sequelize)
-│       ├── middleware/      # Autenticação JWT e permissões
+│       ├── database/        # Conexão, migrations e seeders (Sequelize)
+│       ├── middleware/      # Auth JWT, permissões, acesso ao chamado, erros
 │       ├── models/          # Usuario, Chamado, Interacao, Anexo
+│       ├── utils/           # Validação de entrada
 │       └── routes.js
 ├── frontend/                # SPA (React + Vite + Tailwind)
 │   └── src/
 │       ├── pages/           # Login, Register, Dashboard, ChamadoDetalhe
-│       ├── components/      # ProtectedRoute
+│       ├── components/      # ProtectedRoute, StatusBadge, NovoChamadoModal
 │       └── services/api.js  # Axios com interceptor de token
 └── docker-compose.yml       # MariaDB para desenvolvimento
 ```
@@ -50,17 +52,24 @@ Helpdesk-System/
 
 ## 🔌 Endpoints principais
 
+Todas as rotas ficam sob `/api`. "Dono ou equipe" significa o autor do chamado, ou qualquer usuário `suporte`/`admin`.
+
 | Método | Rota | Descrição | Acesso |
 |---|---|---|---|
-| POST | `/api/register` | Cria usuário | Público |
-| POST | `/api/login` | Autentica e retorna o token | Público |
-| GET | `/api/chamados` | Lista os chamados do usuário | Autenticado |
-| POST | `/api/chamados` | Abre um chamado | Autenticado |
-| GET | `/api/chamados/:id` | Detalhes, interações e anexos | Autenticado |
-| PUT | `/api/chamados/:id/status` | Atualiza o status | Autenticado |
-| POST | `/api/chamados/:id/interacoes` | Adiciona uma mensagem | Autenticado |
-| POST | `/api/chamados/:id/anexos` | Envia um anexo | Dono do chamado |
-| GET | `/api/usuarios` | Lista usuários | Admin |
+| POST | `/register` | Cria usuário (sempre como `comum`) | Público |
+| POST | `/login` | Autentica e retorna o token | Público |
+| GET | `/me` | Dados do usuário logado | Autenticado |
+| GET | `/chamados` | Lista chamados (comum: os próprios; equipe: todos) | Autenticado |
+| POST | `/chamados` | Abre um chamado | Autenticado |
+| GET | `/chamados/:id` | Detalhes, interações e anexos | Dono ou equipe |
+| PUT | `/chamados/:id/status` | Atualiza o status | Dono ou equipe ¹ |
+| POST | `/chamados/:id/interacoes` | Adiciona uma mensagem | Dono ou equipe |
+| POST | `/chamados/:id/anexos` | Envia um anexo (campo `anexo`) | Dono ou equipe |
+| GET | `/chamados/:id/anexos/:anexoId` | Baixa um anexo | Dono ou equipe |
+| GET | `/usuarios` | Lista usuários | Admin |
+| PUT | `/usuarios/:id/perfil` | Altera o perfil de um usuário | Admin |
+
+¹ O dono com perfil `comum` só pode marcar como `resolvido` ou reabrir (`aberto`). Colocar `em andamento` é exclusivo da equipe.
 
 ## 🚀 Como rodar localmente
 
@@ -94,6 +103,7 @@ O `.env.example` já vem com as credenciais do `docker-compose.yml`. Troque só 
 ```bash
 cd frontend
 npm install
+cp .env.example .env      # no Windows (cmd): copy .env.example .env
 npm run dev               # http://localhost:5173
 ```
 
@@ -126,10 +136,13 @@ Para zerar o banco por completo, incluindo o volume do Docker: `docker compose d
 
 ## 🗺️ Próximos passos
 
+- [x] Restringir ao admin a definição de perfis de usuário
+- [x] Controle de acesso por perfil no detalhe do chamado
+- [x] Formulário de abertura de chamado no frontend
 - [ ] Fila de chamados para o perfil `suporte`, com atribuição de responsável
-- [ ] Restringir ao admin a definição de perfis de usuário
-- [ ] Controle de acesso por perfil no detalhe do chamado
+- [ ] Tela de administração de usuários
 - [ ] Prioridade e SLA por chamado
+- [ ] Migração para TypeScript (com Prisma e Zod)
 - [ ] Testes automatizados da API
 - [ ] Deploy (Railway)
 

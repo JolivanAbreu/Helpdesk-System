@@ -1,45 +1,65 @@
 // src/pages/Dashboard.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import api from "../services/api";
+import toast from "react-hot-toast";
+import api, {
+  TOKEN_KEY,
+  USER_KEY,
+  usuarioLogado,
+  isEquipe,
+  mensagemDeErro,
+} from "../services/api";
+import StatusBadge from "../components/StatusBadge";
+import NovoChamadoModal from "../components/NovoChamadoModal";
 
 export default function Dashboard() {
   const [chamados, setChamados] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [modalAberto, setModalAberto] = useState(false);
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem("@HelpDesk:user"));
+  const user = usuarioLogado();
+  const equipe = isEquipe(user);
+
+  async function carregarChamados() {
+    try {
+      const response = await api.get("/chamados");
+      setChamados(response.data);
+    } catch (error) {
+      toast.error(mensagemDeErro(error, "Erro ao carregar chamados."));
+    } finally {
+      setCarregando(false);
+    }
+  }
 
   useEffect(() => {
-    // Busca os chamados assim que o componente é montado
-    api
-      .get("/chamados")
-      .then((response) => {
-        setChamados(response.data);
-      })
-      .catch(() => {
-        // Se der erro (ex: token expirado), desloga o usuário
-        handleLogout();
-      });
+    carregarChamados();
   }, []);
 
   function handleLogout() {
-    localStorage.clear();
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
     navigate("/");
   }
 
-  // Se por algum motivo não encontrar o usuário no localStorage, redireciona para o login
-  if (!user) {
-    navigate("/");
-    return null;
+  function handleChamadoCriado(chamado) {
+    setModalAberto(false);
+    navigate(`/chamado/${chamado.id}`);
   }
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow p-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold text-gray-800">
-          Dashboard de {user.nome}
-        </h1>
+      <header className="bg-white shadow p-4 flex flex-wrap gap-3 justify-between items-center">
         <div>
-          <button className="bg-blue-500 text-white px-4 py-2 rounded-md mr-4 hover:bg-blue-600 transition-colors">
+          <h1 className="text-xl font-bold text-gray-800">Helpdesk</h1>
+          <p className="text-sm text-gray-500">
+            {user?.nome} · perfil {user?.perfil}
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setModalAberto(true)}
+            className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors"
+          >
             Abrir Novo Chamado
           </button>
           <button
@@ -50,40 +70,41 @@ export default function Dashboard() {
           </button>
         </div>
       </header>
-      <main className="p-8">
+
+      <main className="p-4 sm:p-8">
         <h2 className="text-2xl font-semibold mb-4 text-gray-700">
-          Meus Chamados
+          {equipe ? "Todos os chamados" : "Meus chamados"}
         </h2>
         <div className="bg-white p-6 rounded-lg shadow-md">
-          {chamados.length === 0 ? (
+          {carregando ? (
+            <p className="text-gray-600">Carregando...</p>
+          ) : chamados.length === 0 ? (
             <p className="text-gray-600">
-              Você ainda não abriu nenhum chamado.
+              {equipe
+                ? "Nenhum chamado registrado ainda."
+                : "Você ainda não abriu nenhum chamado."}
             </p>
           ) : (
-            <ul className="space-y-4">
+            <ul className="divide-y">
               {chamados.map((chamado) => (
-                <li key={chamado.id} className="border-b last:border-b-0 py-3">
+                <li key={chamado.id}>
                   <Link
                     to={`/chamado/${chamado.id}`}
-                    className="flex justify-between items-center hover:bg-gray-50 p-2 rounded-md"
+                    className="flex justify-between items-center gap-4 hover:bg-gray-50 p-3 rounded-md"
                   >
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-semibold text-lg text-gray-800">
-                        {chamado.titulo}
+                        #{chamado.id} · {chamado.titulo}
                       </p>
-                      <p className="text-sm text-gray-600">
-                        {chamado.descricao.substring(0, 100)}...
+                      <p className="text-sm text-gray-600 truncate">
+                        {chamado.descricao}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {equipe && `${chamado.usuario?.nome ?? "Usuário removido"} · `}
+                        {new Date(chamado.createdAt).toLocaleString("pt-BR")}
                       </p>
                     </div>
-                    <span
-                      className={`text-sm font-medium text-white px-3 py-1 rounded-full ${
-                        chamado.status === "aberto"
-                          ? "bg-green-500"
-                          : "bg-yellow-500"
-                      }`}
-                    >
-                      {chamado.status}
-                    </span>
+                    <StatusBadge status={chamado.status} />
                   </Link>
                 </li>
               ))}
@@ -91,6 +112,13 @@ export default function Dashboard() {
           )}
         </div>
       </main>
+
+      {modalAberto && (
+        <NovoChamadoModal
+          onFechar={() => setModalAberto(false)}
+          onCriado={handleChamadoCriado}
+        />
+      )}
     </div>
   );
 }

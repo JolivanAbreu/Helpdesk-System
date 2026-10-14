@@ -1,35 +1,55 @@
 // src/routes.js
 const express = require('express');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 const multerConfig = require('./config/multer');
 
 const authController = require('./controllers/authController');
 const ChamadoController = require('./controllers/ChamadoController');
+const InteracaoController = require('./controllers/InteracaoController');
 const AnexoController = require('./controllers/AnexoController');
 const UsuarioController = require('./controllers/UsuarioController');
-const authMiddleware = require('./middleware/auth');
-const permissionMiddleware = require('./middleware/permission');
-const InteracaoController = require('./controllers/InteracaoController');
+
+const auth = require('./middleware/auth');
+const permission = require('./middleware/permission');
+const chamadoAccess = require('./middleware/chamadoAccess');
 
 const routes = express.Router();
 const upload = multer(multerConfig);
 
-
-routes.post('/register', authController.register);
-routes.post('/login', authController.login);
-
-routes.use(authMiddleware);
-
-routes.get('/dashboard', (req, res) => {
-    res.send({ ok: true, user: req.userId });
+// Limita tentativas de login/cadastro por IP (proteção contra força bruta)
+const limiteAuth = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Muitas tentativas. Tente novamente em alguns minutos.' },
 });
-routes.get('/chamados/:chamado_id', ChamadoController.show);
 
-routes.post('/chamados/:chamado_id/interacoes', InteracaoController.store);
-routes.post('/chamados', ChamadoController.store);
+// ---------- Rotas públicas ----------
+routes.post('/register', limiteAuth, authController.register);
+routes.post('/login', limiteAuth, authController.login);
+
+// ---------- Daqui para baixo, só com token ----------
+routes.use(auth);
+
+routes.get('/me', (req, res) => res.json(req.user));
+
+// Chamados
 routes.get('/chamados', ChamadoController.index);
-routes.put('/chamados/:chamado_id/status', ChamadoController.update);
-routes.post('/chamados/:chamado_id/anexos', upload.single('anexo'), AnexoController.store);
-routes.get('/usuarios', permissionMiddleware('admin'), UsuarioController.index);
+routes.post('/chamados', ChamadoController.store);
+routes.get('/chamados/:chamado_id', chamadoAccess, ChamadoController.show);
+routes.put('/chamados/:chamado_id/status', chamadoAccess, ChamadoController.update);
+
+// Interações
+routes.post('/chamados/:chamado_id/interacoes', chamadoAccess, InteracaoController.store);
+
+// Anexos (o acesso é checado antes do upload gravar o arquivo)
+routes.post('/chamados/:chamado_id/anexos', chamadoAccess, upload.single('anexo'), AnexoController.store);
+routes.get('/chamados/:chamado_id/anexos/:anexo_id', chamadoAccess, AnexoController.download);
+
+// Usuários (somente admin)
+routes.get('/usuarios', permission('admin'), UsuarioController.index);
+routes.put('/usuarios/:usuario_id/perfil', permission('admin'), UsuarioController.updatePerfil);
 
 module.exports = routes;

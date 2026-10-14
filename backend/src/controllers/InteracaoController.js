@@ -1,28 +1,22 @@
-// backend/src/controllers/InteracaoController.js
+// src/controllers/InteracaoController.js
 const Interacao = require('../models/Interacao');
-const Chamado = require('../models/Chamado');
+const { texto, validarMensagem } = require('../utils/validacao');
 
 module.exports = {
-    async store(req, res) {
-        const { chamado_id } = req.params;
-        const { mensagem } = req.body;
-        const usuario_id = req.userId;
+  // Adiciona uma mensagem ao chamado.
+  // O acesso já foi validado pelo middleware chamadoAccess.
+  async store(req, res) {
+    const erro = validarMensagem(req.body);
+    if (erro) {
+      return res.status(400).json({ error: erro });
+    }
 
-        const chamado = await Chamado.findByPk(chamado_id);
-        if (!chamado) {
-            return res.status(404).send({ error: 'Chamado não encontrado.' });
-        }
+    const interacao = await Interacao.create({
+      mensagem: texto(req.body.mensagem),
+      chamado_id: req.chamado.id,
+      usuario_id: req.userId,
+    });
 
-        try {
-            const interacao = await Interacao.create({
-                mensagem,
-                chamado_id,
-                usuario_id,
-            });
-
-            return res.status(201).json(interacao);
-        } catch (err) {
-            return res.status(400).send({ error: 'Falha ao adicionar interação.' });
-        }
-    },
+    return res.status(201).json(interacao);
+  },
 };

@@ -1,31 +1,39 @@
 // src/middleware/auth.js
 const jwt = require('jsonwebtoken');
+const Usuario = require('../models/Usuario');
 
-module.exports = (req, res, next) => {
+// Valida o token JWT e carrega o usuário logado em req.user.
+// O perfil é lido do banco a cada requisição, então uma mudança
+// de perfil feita pelo admin vale na hora, sem precisar de novo login.
+module.exports = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
-    return res.status(401).send({ error: 'Token não informado' });
+    return res.status(401).json({ error: 'Token não informado.' });
   }
 
-  const parts = authHeader.split(' ');
+  const [scheme, token] = authHeader.split(' ');
 
-  if (parts.length !== 2) {
-    return res.status(401).send({ error: 'Erro no formato do token' });
+  if (!token || !/^Bearer$/i.test(scheme)) {
+    return res.status(401).json({ error: 'Token mal formatado.' });
   }
 
-  const [scheme, token] = parts;
-
-  if (!/^Bearer$/i.test(scheme)) {
-    return res.status(401).send({ error: 'Token mal formatado' });
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Token inválido ou expirado.' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(401).send({ error: 'Token inválido' });
-    }
-
-    req.userId = decoded.id;
-    return next();
+  const usuario = await Usuario.findByPk(decoded.id, {
+    attributes: ['id', 'nome', 'email', 'perfil'],
   });
+
+  if (!usuario) {
+    return res.status(401).json({ error: 'Usuário não encontrado.' });
+  }
+
+  req.userId = usuario.id;
+  req.user = usuario;
+  return next();
 };

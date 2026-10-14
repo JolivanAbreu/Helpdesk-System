@@ -1,27 +1,29 @@
 // src/pages/Login.jsx
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import api from "../services/api";
+import toast from "react-hot-toast";
+import api, { TOKEN_KEY, USER_KEY, mensagemDeErro } from "../services/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [enviando, setEnviando] = useState(false);
   const navigate = useNavigate();
 
   async function handleSubmit(event) {
     event.preventDefault();
+    setEnviando(true);
     try {
       const response = await api.post("/login", { email, senha });
 
-      localStorage.setItem("@HelpDesk:token", response.data.token);
-      localStorage.setItem(
-        "@HelpDesk:user",
-        JSON.stringify(response.data.usuario)
-      );
+      localStorage.setItem(TOKEN_KEY, response.data.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(response.data.usuario));
 
       navigate("/dashboard");
     } catch (error) {
-      alert("Email ou senha inválidos.");
+      toast.error(mensagemDeErro(error, "Não foi possível entrar."));
+    } finally {
+      setEnviando(false);
     }
   }
 
@@ -54,9 +56,10 @@ export default function Login() {
           </div>
           <button
             type="submit"
-            className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors"
+            disabled={enviando}
+            className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-60"
           >
-            Entrar
+            {enviando ? "Entrando..." : "Entrar"}
           </button>
         </form>
         <p className="text-center text-gray-600 mt-4">

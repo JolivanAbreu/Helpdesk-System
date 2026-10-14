@@ -1,24 +1,30 @@
 // src/pages/Register.jsx
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import api from "../services/api";
+import toast from "react-hot-toast";
+import api, { TOKEN_KEY, USER_KEY, mensagemDeErro } from "../services/api";
 
 export default function Register() {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [enviando, setEnviando] = useState(false);
   const navigate = useNavigate();
 
   async function handleSubmit(event) {
     event.preventDefault();
+    setEnviando(true);
     try {
-      await api.post("/register", { nome, email, senha });
-      alert(
-        "Cadastro realizado com sucesso! Você será redirecionado para o login."
-      );
-      navigate("/");
+      const response = await api.post("/register", { nome, email, senha });
+      // O cadastro já devolve o token, então o usuário entra direto
+      localStorage.setItem(TOKEN_KEY, response.data.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(response.data.usuario));
+      toast.success("Conta criada! Bem-vindo(a).");
+      navigate("/dashboard");
     } catch (error) {
-      alert("Erro no cadastro. Verifique os dados ou tente outro e-mail.");
+      toast.error(mensagemDeErro(error, "Não foi possível concluir o cadastro."));
+    } finally {
+      setEnviando(false);
     }
   }
 
@@ -53,6 +59,7 @@ export default function Register() {
             <label className="block text-gray-700 mb-2">Senha</label>
             <input
               type="password"
+              minLength={6}
               value={senha}
               onChange={(e) => setSenha(e.target.value)}
               className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -61,9 +68,10 @@ export default function Register() {
           </div>
           <button
             type="submit"
-            className="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition-colors"
+            disabled={enviando}
+            className="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition-colors disabled:opacity-60"
           >
-            Registrar
+            {enviando ? "Criando conta..." : "Registrar"}
           </button>
         </form>
         <p className="text-center text-gray-600 mt-4">

@@ -3,37 +3,46 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 
+const UPLOADS_DIR = path.resolve(__dirname, '..', '..', 'tmp', 'uploads');
+
+const MIMES_PERMITIDOS = {
+  'image/jpeg': '.jpg',
+  'image/pjpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'application/pdf': '.pdf',
+};
+
+const TAMANHO_MAXIMO_MB = 10;
+
 module.exports = {
-    storage: multer.diskStorage({
-        destination: path.resolve(__dirname, '..', '..', 'tmp', 'uploads'),
-        filename: (req, file, cb) => {
-            crypto.randomBytes(16, (err, hash) => {
-                if (err) cb(err);
+  UPLOADS_DIR,
+  TAMANHO_MAXIMO_MB,
 
-                const fileName = `${hash.toString('hex')}-${file.originalname}`;
-
-                cb(null, fileName);
-            });
-        },
-    }),
-
-    limits: {
-        fileSize: 10 * 1024 * 1024,
+  storage: multer.diskStorage({
+    destination: UPLOADS_DIR,
+    // O arquivo em disco recebe um nome aleatório + a extensão do tipo real.
+    // O nome original fica só no banco (para exibir e para o download),
+    // o que evita problemas com acentos, espaços e caminhos maliciosos.
+    filename: (req, file, cb) => {
+      crypto.randomBytes(16, (err, hash) => {
+        if (err) return cb(err);
+        return cb(null, `${hash.toString('hex')}${MIMES_PERMITIDOS[file.mimetype]}`);
+      });
     },
+  }),
 
-    fileFilter: (req, file, cb) => {
-        const allowedMimes = [
-            'image/jpeg',
-            'image/pjpeg',
-            'image/png',
-            'image/gif',
-            'application/pdf',
-        ];
+  limits: {
+    fileSize: TAMANHO_MAXIMO_MB * 1024 * 1024,
+    files: 1,
+  },
 
-        if (allowedMimes.includes(file.mimetype)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Tipo de arquivo inválido.'));
-        }
-    },
+  fileFilter: (req, file, cb) => {
+    if (MIMES_PERMITIDOS[file.mimetype]) {
+      return cb(null, true);
+    }
+    const erro = new Error('Tipo de arquivo não permitido. Envie imagens (JPG, PNG, GIF) ou PDF.');
+    erro.status = 400;
+    return cb(erro);
+  },
 };
