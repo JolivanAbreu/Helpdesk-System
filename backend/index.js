@@ -3,7 +3,7 @@
 const express = require('express');
 const path = require('path');
 const cors = require('cors'); 
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 require('./src/database');
 
 const routes = require('./src/routes');

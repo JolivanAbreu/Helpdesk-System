@@ -137,7 +137,7 @@ export default function ChamadoDetalhe() {
                 <p className="font-semibold">
                   {interacao.usuario.nome}{" "}
                   <span className="text-sm text-gray-500 font-normal">
-                    - {new Date(interacao.created_at).toLocaleString("pt-BR")}
+                    - {new Date(interacao.createdAt).toLocaleString("pt-BR")}
                   </span>
                 </p>
                 <p className="text-gray-800 mt-1">{interacao.mensagem}</p>

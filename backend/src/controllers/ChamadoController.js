@@ -5,8 +5,6 @@ const Interacao = require('../models/Interacao');
 
 module.exports = {
   async show(req, res) {
-    const { chamado_id } = req.params;
-    console.log(`--- ACESSANDO ROTA DE DETALHES (SHOW) PARA O CHAMADO ID: ${chamado_id} ---`);
     try {
       const { chamado_id } = req.params;
       const chamado = await Chamado.findByPk(chamado_id, {
@@ -33,7 +31,6 @@ module.exports = {
 
   // Listar chamados do usuário logado
   async index(req, res) {
-    console.log('--- ACESSANDO ROTA DE LISTAGEM (INDEX) ---');
     try {
       const chamados = await Chamado.findAll({
         where: {

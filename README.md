@@ -64,36 +64,65 @@ Helpdesk-System/
 
 ## 🚀 Como rodar localmente
 
-**Pré-requisitos:** Node.js 18+ e Docker.
+**Pré-requisitos:** Node.js 18+ e Docker Desktop (aberto).
+
+### 1. Banco de dados
+
+Na raiz do projeto:
 
 ```bash
-# 1. Banco de dados
 docker compose up -d
+```
 
-# 2. Backend
+Sobe um MariaDB 10.11 em `localhost:3306`, já com o banco `helpdesk_db` e o usuário `helpdesk_user` criados.
+
+### 2. Backend
+
+```bash
 cd backend
 npm install
-# crie o arquivo .env (veja abaixo)
-npx sequelize-cli db:migrate
-npm run dev            # http://localhost:3000
+cp .env.example .env      # no Windows (cmd): copy .env.example .env
+npm run db:migrate        # cria as tabelas
+npm run db:seed           # cria usuários e chamados de exemplo
+npm run dev               # API em http://localhost:3000/api
+```
 
-# 3. Frontend (em outro terminal)
+O `.env.example` já vem com as credenciais do `docker-compose.yml`. Troque só o `JWT_SECRET`.
+
+### 3. Frontend (em outro terminal)
+
+```bash
 cd frontend
 npm install
-npm run dev            # http://localhost:5173
+npm run dev               # http://localhost:5173
 ```
 
-**`backend/.env`**
+### Usuários de teste
 
-```env
-PORT=3000
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=helpdesk_user
-DB_PASSWORD=sua_senha
-DB_NAME=helpdesk_db
-JWT_SECRET=uma_chave_longa_e_aleatoria
-```
+Criados pelo `npm run db:seed`. A senha de todos é `123456`.
+
+| Perfil | E-mail |
+|---|---|
+| admin | `admin@helpdesk.com` |
+| suporte | `suporte@helpdesk.com` |
+| comum | `usuario@helpdesk.com` |
+
+### Comandos úteis (backend)
+
+| Comando | O que faz |
+|---|---|
+| `npm run dev` | Inicia a API com recarga automática |
+| `npm run db:migrate` | Aplica as migrations pendentes |
+| `npm run db:seed` | Insere os dados de exemplo |
+| `npm run db:reset` | Apaga tudo, recria as tabelas e insere os dados de exemplo |
+
+Para zerar o banco por completo, incluindo o volume do Docker: `docker compose down -v`.
+
+### Problemas comuns
+
+- **`ECONNREFUSED` ou `Access denied` ao rodar migrations:** o container do banco não está de pé, ou a senha do `.env` não bate com a do `docker-compose.yml`. Confira com `docker compose ps`.
+- **Porta 3306 em uso:** já existe um MySQL/MariaDB instalado na máquina. Pare esse serviço ou troque a porta no compose (ex.: `"3307:3306"`) e no `DB_PORT` do `.env`.
+- **`Foreign key constraint is incorrectly formed`:** acontecia em versões antigas do projeto, que não tinham a migration de `usuarios`. Atualize o código e rode `npm run db:reset`.
 
 ## 🗺️ Próximos passos
 
