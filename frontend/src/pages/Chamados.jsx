@@ -2,11 +2,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { Search, Plus, Inbox, ChevronLeft, ChevronRight, SearchX } from "lucide-react";
+import { Search, Plus, Inbox, ChevronLeft, ChevronRight, SearchX, Users } from "lucide-react";
 import api, { isEquipe, mensagemDeErro } from "../services/api";
-import { PRIORIDADES, LISTA_PRIORIDADES, CATEGORIAS, LISTA_CATEGORIAS } from "../config/dominio";
-import { codigoChamado, tempoRelativo } from "../utils/formatar";
+import { PRIORIDADES, LISTA_PRIORIDADES, iconeCategoria } from "../config/dominio";
+import { codigoChamado, tempoRelativo, caminhoCategoria } from "../utils/formatar";
 import useAtualizacaoPeriodica from "../hooks/useAtualizacaoPeriodica";
+import { useCatalogo, useGrupos } from "../hooks/useCatalogo";
 import Cabecalho from "../components/layout/Cabecalho";
 import Button from "../components/ui/Button";
 import { Input, Select } from "../components/ui/Campo";
@@ -20,6 +21,7 @@ const PENDENTES = "aberto,em andamento";
 const ABAS_EQUIPE = [
   { id: "pendentes", rotulo: "Pendentes", contador: "pendentes", filtros: { status: PENDENTES } },
   { id: "meus", rotulo: "Atribuídos a mim", contador: "atribuidosAMim", filtros: { status: PENDENTES, responsavel: "eu" } },
+  { id: "meu-grupo", rotulo: "Do meu grupo", contador: "doMeuGrupo", filtros: { status: PENDENTES, grupo: "meus" } },
   { id: "sem-responsavel", rotulo: "Sem responsável", contador: "semResponsavel", filtros: { status: PENDENTES, responsavel: "nenhum" } },
   { id: "atrasados", rotulo: "Atrasados", contador: "atrasados", filtros: { sla: "estourado" }, alerta: true },
   { id: "resolvidos", rotulo: "Resolvidos", contador: "resolvidos", filtros: { status: "resolvido" } },
@@ -50,6 +52,9 @@ export default function Chamados() {
   const aba = abas.find((a) => a.id === params.get("aba")) || abas[0];
   const prioridade = params.get("prioridade") || "";
   const categoria = params.get("categoria") || "";
+  const grupo = equipe ? params.get("grupo") || "" : "";
+  const { catalogo } = useCatalogo();
+  const { grupos } = useGrupos(equipe);
   const ordem = params.get("ordem") || (equipe ? "prazo" : "recentes");
   const pagina = Math.max(1, Number(params.get("pagina")) || 1);
   const buscaUrl = params.get("busca") || "";
@@ -94,7 +99,16 @@ export default function Chamados() {
     if (!silencioso) setCarregando(true);
     try {
       const { data } = await api.get("/chamados", {
-        params: { ...aba.filtros, prioridade: prioridade || undefined, categoria: categoria || undefined, ordem, pagina, porPagina: POR_PAGINA, busca: buscaUrl || undefined },
+        params: {
+          ...aba.filtros,
+          prioridade: prioridade || undefined,
+          categoria: categoria || undefined,
+          ...(grupo ? { grupo } : {}),
+          ordem,
+          pagina,
+          porPagina: POR_PAGINA,
+          busca: buscaUrl || undefined,
+        },
       });
       setResultado(data);
     } catch (error) {
@@ -102,7 +116,7 @@ export default function Chamados() {
     } finally {
       setCarregando(false);
     }
-  }, [aba, prioridade, categoria, ordem, pagina, buscaUrl]);
+  }, [aba, prioridade, categoria, grupo, ordem, pagina, buscaUrl]);
 
   useEffect(() => { carregar(); }, [carregar]);
   useAtualizacaoPeriodica(() => carregar({ silencioso: true }), 30000);
@@ -121,7 +135,7 @@ export default function Chamados() {
     }
   }
 
-  const filtrando = Boolean(buscaUrl || prioridade || categoria);
+  const filtrando = Boolean(buscaUrl || prioridade || categoria || grupo);
   const chamados = resultado?.dados ?? [];
 
   return (
@@ -162,13 +176,13 @@ export default function Chamados() {
 
       {/* Busca e filtros */}
       <div className="mt-4 flex flex-wrap gap-3">
-        <div className="relative min-w-[220px] flex-1">
+        <div className="relative min-w-[200px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-aco" aria-hidden="true" />
           <Input
             type="search"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar por assunto, descrição ou código"
+            placeholder="Buscar por assunto ou código"
             aria-label="Buscar chamados"
             className="pl-9"
           />
@@ -177,10 +191,21 @@ export default function Chamados() {
           <option value="">Todas as prioridades</option>
           {LISTA_PRIORIDADES.map((p) => <option key={p} value={p}>{PRIORIDADES[p].rotulo}</option>)}
         </Select>
-        <Select value={categoria} onChange={(e) => definir({ categoria: e.target.value })} aria-label="Categoria" className="w-auto">
+        <Select value={categoria} onChange={(e) => definir({ categoria: e.target.value })} aria-label="Categoria" className="w-auto max-w-[13rem]">
           <option value="">Todas as categorias</option>
-          {LISTA_CATEGORIAS.map((c) => <option key={c} value={c}>{CATEGORIAS[c].rotulo}</option>)}
+          {catalogo.map((pai) => (
+            <optgroup key={pai.id} label={pai.nome}>
+              <option value={pai.id}>{pai.nome} (todas)</option>
+              {pai.subcategorias.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </optgroup>
+          ))}
         </Select>
+        {equipe && (
+          <Select value={grupo} onChange={(e) => definir({ grupo: e.target.value })} aria-label="Grupo" className="w-auto">
+            <option value="">Todos os grupos</option>
+            {grupos.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
+          </Select>
+        )}
         <Select value={ordem} onChange={(e) => definir({ ordem: e.target.value })} aria-label="Ordenar por" className="w-auto">
           {Object.entries(ORDENS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
         </Select>
@@ -203,8 +228,8 @@ export default function Chamados() {
             <Vazio
               icone={SearchX}
               titulo="Nenhum chamado encontrado"
-              texto="Tente outra busca ou remova os filtros de prioridade e categoria."
-              acao={<Button variante="secundario" onClick={() => { setBusca(""); ultimaBuscaEnviada.current = ""; definir({ busca: "", prioridade: "", categoria: "" }); }}>Limpar filtros</Button>}
+              texto="Tente outra busca ou remova os filtros."
+              acao={<Button variante="secundario" onClick={() => { setBusca(""); ultimaBuscaEnviada.current = ""; definir({ busca: "", prioridade: "", categoria: "", grupo: "" }); }}>Limpar filtros</Button>}
             />
           ) : (
             <Vazio
@@ -236,13 +261,14 @@ export default function Chamados() {
   );
 }
 
-function Categoria({ valor }) {
-  const info = CATEGORIAS[valor] || CATEGORIAS.outros;
-  const Icone = info.icone;
+// Ícone da categoria principal + nome da subcategoria (caminho completo no title)
+function Categoria({ categoria }) {
+  const Icone = iconeCategoria(categoria?.pai?.icone);
   return (
-    <span className="inline-flex shrink-0 items-center gap-1">
-      <Icone className="h-3.5 w-3.5" aria-hidden="true" />
-      {info.rotulo}
+    <span className="inline-flex min-w-0 shrink-0 items-center gap-1" title={caminhoCategoria(categoria)}>
+      <Icone className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <span className="sr-only">{categoria?.pai?.nome} › </span>
+      {categoria?.nome ?? "Sem categoria"}
     </span>
   );
 }
@@ -263,7 +289,13 @@ function LinhaChamado({ chamado, equipe, assumindo, onAssumir }) {
             {chamado.titulo}
           </Link>
           <p className="mt-1 flex min-w-0 items-center gap-3 text-xs text-aco">
-            <Categoria valor={chamado.categoria} />
+            <Categoria categoria={chamado.categoria} />
+            {equipe && chamado.grupo && (
+              <span className="hidden shrink-0 items-center gap-1 sm:inline-flex" title="Grupo responsável">
+                <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                {chamado.grupo.nome}
+              </span>
+            )}
             <span className="truncate">
               {equipe ? `Aberto por ${chamado.usuario?.nome ?? "usuário removido"}` : `Aberto ${tempoRelativo(chamado.createdAt)}`}
             </span>

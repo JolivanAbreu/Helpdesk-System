@@ -1,35 +1,50 @@
 import { test, expect } from "@playwright/test";
-import { entrarComo, aviso, mensagemNaConversa } from "./apoio";
+import { entrarComo, aviso, mensagemNaConversa, escolher } from "./apoio";
 
 const conversa = (page) => page.getByRole("region", { name: "Conversa" });
 
 test.describe("Chamado", () => {
-  test("colaborador abre um chamado pelo atalho N, com a prioridade escolhida", async ({ page }) => {
+  test("colaborador abre pelo atalho N e a subcategoria define prioridade, prazos e grupo", async ({ page }) => {
     await entrarComo(page, "colaborador");
     await page.keyboard.press("n");
 
     const janela = page.getByRole("dialog", { name: "Novo chamado" });
-    await janela.getByLabel("Assunto").fill("Notebook não carrega");
-    await janela.getByLabel("Categoria").selectOption("hardware");
+    await janela.getByLabel("Assunto", { exact: true }).fill("Notebook não carrega");
+    await escolher(janela, /^Hardware/);
+    await escolher(janela, /^Computador ou notebook/);
+    await expect(janela).toContainText("Resposta em até 2 h");
+    await expect(janela).toContainText("solução em até 8 h");
+    await expect(janela).toContainText("Service Desk (N1)");
+    await expect(janela.getByText("Quanto isso afeta você?")).toHaveCount(0);
     await janela.getByLabel("Descrição").fill("A bateria não carrega mesmo na tomada.");
-    await janela.getByText("Impede o meu trabalho").click();
     await janela.getByRole("button", { name: "Abrir chamado" }).click();
 
     await expect(page).toHaveURL(/\/chamado\/18$/);
     await expect(page.getByRole("heading", { name: "Notebook não carrega" })).toBeVisible();
-    await expect(page.getByText("Alta").first()).toBeVisible();
-    await expect(page.getByRole("region", { name: "Detalhes do chamado" })).toContainText("Hardware");
+    const detalhes = page.getByRole("region", { name: "Detalhes do chamado" });
+    await expect(detalhes).toContainText("Alta");
+    await expect(detalhes).toContainText("Hardware › Computador ou notebook");
+    await expect(detalhes).toContainText("Service Desk (N1)");
   });
 
-  test("a categoria é obrigatória ao abrir um chamado", async ({ page }) => {
+  test("só dá para abrir depois de escolher o tipo de problema", async ({ page }) => {
     await entrarComo(page, "colaborador");
     await page.keyboard.press("n");
     const janela = page.getByRole("dialog", { name: "Novo chamado" });
-    await janela.getByLabel("Assunto").fill("Sem categoria");
+    await janela.getByLabel("Assunto", { exact: true }).fill("Sem categoria");
     await janela.getByLabel("Descrição").fill("Teste");
-    await janela.getByRole("button", { name: "Abrir chamado" }).click();
-    await expect(janela).toBeVisible();
-    await expect(page).not.toHaveURL(/\/chamado\/18/);
+    const abrir = janela.getByRole("button", { name: "Abrir chamado" });
+    await expect(abrir).toBeDisabled();
+
+    await escolher(janela, /^Rede e internet/);
+    await expect(abrir).toBeDisabled();
+    await escolher(janela, /^VPN/);
+    await expect(abrir).toBeEnabled();
+
+    // Categoria com uma única opção já vem escolhida
+    await escolher(janela, /^Outros\s*Qualquer outro assunto/);
+    await expect(janela.getByRole("radio", { name: /^Outros assuntos/ })).toBeChecked();
+    await expect(abrir).toBeEnabled();
   });
 
   test("mostra os prazos de resposta e de solução", async ({ page }) => {
@@ -42,11 +57,39 @@ test.describe("Chamado", () => {
     await expect(prazos.getByRole("progressbar")).toHaveCount(2);
   });
 
-  test("suporte recategoriza e a timeline registra", async ({ page }) => {
+  test("suporte reclassifica e a prioridade segue a nova subcategoria", async ({ page }) => {
+    await entrarComo(page, "suporte");
+    await page.goto("/chamado/6");
+    await page.getByLabel("Categoria").selectOption({ label: "Redefinir senha" });
+    await expect(conversa(page).getByText(
+      "alterou a categoria de Rede e internet › Telefone IP para Acessos e senhas › Redefinir senha (prioridade alta)",
+    )).toBeVisible();
+    await expect(page.getByLabel("Prioridade")).toHaveValue("alta");
+  });
+
+  test("suporte transfere para o N2 com motivo, e o histórico registra", async ({ page }) => {
     await entrarComo(page, "suporte");
     await page.goto("/chamado/1");
-    await page.getByLabel("Categoria").selectOption("rede");
-    await expect(conversa(page).getByText("alterou a categoria de Hardware para Rede e internet")).toBeVisible();
+    const detalhes = page.getByRole("region", { name: "Detalhes do chamado" });
+    await expect(detalhes).toContainText("Service Desk (N1)");
+    await detalhes.getByRole("button", { name: "Transferir" }).click();
+
+    const janela = page.getByRole("dialog", { name: "Transferir chamado" });
+    const transferir = janela.getByRole("button", { name: "Transferir" });
+    await expect(transferir).toBeDisabled();
+    await janela.getByLabel("Grupo").selectOption({ label: "Infraestrutura (N2)" });
+    // Só os membros do grupo escolhido aparecem
+    await expect(janela.getByLabel("Técnico").locator("option")).toHaveText(["Fila do grupo (sem técnico)", "Rafael Costa"]);
+    await janela.getByLabel("Técnico").selectOption({ label: "Rafael Costa" });
+    await janela.getByLabel("Motivo").fill("Servidor de impressão fora do ar");
+    await transferir.click();
+
+    await expect(aviso(page, "Chamado transferido para Rafael Costa.")).toBeVisible();
+    await expect(janela).toHaveCount(0);
+    await expect(detalhes).toContainText("Infraestrutura (N2)");
+    await expect(conversa(page).getByText(
+      "transferiu o chamado para Infraestrutura (N2) / Rafael Costa. Motivo: Servidor de impressão fora do ar",
+    )).toBeVisible();
   });
 
   test("nota interna aparece para a equipe e não para o solicitante", async ({ page }) => {

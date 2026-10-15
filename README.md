@@ -1,6 +1,6 @@
 # NexoDesk: Helpdesk System
 
-Central de atendimento de TI full-stack: colaboradores abrem chamados, a equipe de suporte faz a triagem por prioridade, assume, conversa e resolve, e o administrador acompanha tudo por indicadores.
+Central de atendimento de TI full-stack, no modelo de ferramentas como o GLPI: o colaborador abre o chamado pelo catálogo de serviços, a subcategoria define a prioridade, os prazos e o grupo que atende (N1, N2…), a equipe assume, conversa, transfere e resolve, e o administrador acompanha tudo por indicadores.
 
 Nasceu da minha rotina como Analista de Suporte N1: a ideia é reproduzir o ciclo de vida real de um chamado, da abertura à resolução, com o fluxo de trabalho de ferramentas corporativas de service desk.
 
@@ -22,32 +22,40 @@ Nasceu da minha rotina como Analista de Suporte N1: a ideia é reproduzir o cicl
 
 ## ✨ Funcionalidades
 
+**Catálogo de serviços e grupos técnicos**
+- Categorias e subcategorias (ex.: *Software › Sistema fora do ar*). Cada subcategoria define **prioridade**, **prazo de resposta**, **prazo de solução** e o **grupo** que recebe o chamado
+- O solicitante não escolhe urgência: escolhe o assunto, e vê na hora a prioridade, os prazos e quem vai atender
+- Grupos técnicos (Service Desk N1, Infraestrutura N2, Sistemas N2), e um técnico pode estar em vários
+- **Transferência** para outro grupo e/ou técnico com **motivo obrigatório**, registrado no histórico: é assim que o N1 escala para o N2
+- O admin edita o catálogo e os grupos pela própria interface
+
 **Prazos de atendimento (SLA)**
-- Cada prioridade define um prazo de primeira resposta e um de solução (ver tabela abaixo)
+- Os prazos são **gravados no chamado na abertura**: editar o catálogo depois não muda o histórico de SLA
 - A fila mostra quanto falta ou há quanto tempo o prazo venceu, e começa pelos mais atrasados
 - Aba "Atrasados", barras de prazo consumido no chamado e indicadores de cumprimento no painel do admin
-- A primeira mensagem da equipe ao solicitante registra a resposta; mudar a prioridade recalcula os prazos
+- A primeira mensagem da equipe registra a resposta; reclassificar a subcategoria ou mudar a prioridade recalcula os prazos
 
 **Fila de atendimento**
 - Prioridade (crítica, alta, média, baixa) com faixa colorida em cada chamado para triagem rápida
-- Categorias (hardware, software, rede, acessos, e-mail, outros), escolhidas na abertura e ajustáveis pela equipe
 - Responsável por chamado: assumir pela lista, atribuir a outro técnico ou devolver para a fila
-- Abas com contadores: pendentes, atribuídos a mim, sem responsável, resolvidos e todos
-- Busca por assunto, descrição ou código (`CH-0042`), filtros por prioridade e categoria, ordenação e paginação
+- Abas com contadores: pendentes, atribuídos a mim, **do meu grupo**, sem responsável, atrasados, resolvidos e todos
+- Busca por assunto, descrição ou código (`CH-0042`), filtros por prioridade, categoria (a principal inclui as subcategorias) e grupo, ordenação e paginação
 - Filtros guardados na URL, então um link já abre a fila filtrada
 - Lista e conversa se atualizam sozinhas enquanto a aba está aberta
 
 **Chamado**
 - Conversa em estilo chat com o histórico automático de eventos ("Rafael assumiu o chamado", "alterou a prioridade de média para alta")
 - Notas internas: anotações da equipe dentro do chamado que o solicitante não vê
-- Painel de propriedades: status, prioridade, categoria e responsável editáveis pela equipe
+- Painel de propriedades: status, prioridade, subcategoria, grupo (com o botão Transferir) e responsável editáveis pela equipe
 - Anexos com arrastar e soltar e download autenticado
 - Envio de mensagem com `Ctrl + Enter`; tecla `N` abre um novo chamado de qualquer tela
 
 **Administração**
 - Indicadores: pendentes, prazos estourados, resolvidos dentro do prazo e tempo médio de resolução
 - Gráfico de chamados abertos x resolvidos nos últimos 14 dias (com visualização em tabela)
-- Pendentes por prioridade, chamados por categoria, desempenho de cada técnico (com % no prazo) e chamados parados há mais tempo
+- Fila por grupo, pendentes por prioridade, chamados por categoria, desempenho de cada técnico (com % no prazo) e chamados parados há mais tempo
+- Catálogo: criar e editar categorias e subcategorias, com prioridade, prazos em horas, grupo e ativação
+- Grupos: criar, renomear, desativar e definir os membros
 - Gestão de usuários: criar já com perfil, promover, desativar e reativar contas
 
 **Segurança**
@@ -56,9 +64,20 @@ Nasceu da minha rotina como Analista de Suporte N1: a ideia é reproduzir o cicl
 - Controle de acesso por chamado; conta desativada perde o acesso na hora
 - Validação de entrada, tratamento central de erros, rate limit no login, Helmet e CORS restrito
 
-### Metas de atendimento
+### Catálogo de fábrica
 
-Definidas em `backend/src/config/perfis.js`, em horas corridas a partir da abertura:
+Criado pela migration (`backend/src/database/catalogoPadrao.js`) e editável na aba **Administração › Catálogo**. Alguns exemplos:
+
+| Subcategoria | Prioridade | Resposta | Solução | Grupo |
+|---|---|---|---|---|
+| Software › Sistema fora do ar | Crítica | 1 h | 4 h | Sistemas (N2) |
+| Software › Backup e servidores | Crítica | 1 h | 4 h | Infraestrutura (N2) |
+| Acessos › Redefinir senha | Alta | 30 min | 2 h | Service Desk (N1) |
+| Hardware › Impressora | Alta | 2 h | 8 h | Service Desk (N1) |
+| Rede › VPN | Média | 4 h | 24 h | Infraestrutura (N2) |
+| Hardware › Teclado, mouse e webcam | Baixa | 8 h | 72 h | Service Desk (N1) |
+
+Ao todo são 6 categorias e 23 subcategorias. Quando a equipe muda a prioridade de um chamado à mão, os prazos passam a seguir as metas padrão da prioridade (`backend/src/config/perfis.js`):
 
 | Prioridade | Primeira resposta | Solução |
 |---|---|---|
@@ -71,9 +90,13 @@ Um prazo em aberto fica **no prazo**, **em risco** (a partir de 75% do tempo con
 
 ## 🖼️ Telas
 
-| Login | Chamado |
+| Novo chamado pelo catálogo | Chamado |
 |---|---|
-| ![Login](docs/screenshots/login.png) | ![Chamado](docs/screenshots/chamado.png) |
+| ![Novo chamado](docs/screenshots/novo-chamado.png) | ![Chamado](docs/screenshots/chamado.png) |
+
+| Catálogo de serviços | Login |
+|---|---|
+| ![Catálogo](docs/screenshots/catalogo.png) | ![Login](docs/screenshots/login.png) |
 
 ![Administração](docs/screenshots/admin.png)
 
@@ -87,11 +110,11 @@ Helpdesk-System/
 │   │   ├── app.js               # App Express (usado pelo servidor e pelos testes)
 │   │   ├── routes.js
 │   │   ├── config/              # Banco, upload (Multer), perfis, status e prioridades
-│   │   ├── controllers/         # Auth, Chamado, Interação, Anexo, Usuário, Admin
+│   │   ├── controllers/         # Auth, Chamado, Interação, Anexo, Usuário, Admin, Categoria, Grupo
 │   │   ├── database/            # Conexão, migrations e seeders (Sequelize)
 │   │   ├── middleware/          # Auth JWT, permissões, acesso ao chamado, erros
-│   │   ├── models/              # Usuario, Chamado, Interacao, Anexo
-│   │   ├── services/            # Eventos da timeline e cálculo do SLA
+│   │   ├── models/              # Usuario, Chamado, Interacao, Anexo, Categoria, Grupo
+│   │   ├── services/            # Eventos da timeline, cálculo do SLA e consultas do catálogo
 │   │   └── utils/               # Validação de entrada
 │   └── tests/                   # Contrato (API real + demo) e servidor
 ├── frontend/                    # SPA (React 19 + Vite + Tailwind)
@@ -100,10 +123,10 @@ Helpdesk-System/
 │   │   ├── components/
 │   │   │   ├── ui/              # Design system: botão, campos, modal, selos, estados
 │   │   │   ├── layout/          # Barra lateral, cabeçalho de página, tela de login
-│   │   │   └── admin/           # Gráfico de chamados por dia
+│   │   │   └── admin/           # Gráfico por dia, gestão do catálogo e dos grupos
 │   │   ├── config/              # Marca (nome do sistema) e rótulos de domínio
 │   │   ├── demo/                # API simulada para a demonstração sem servidor
-│   │   ├── hooks/               # Atualização periódica
+│   │   ├── hooks/               # Atualização periódica e catálogo/grupos/equipe em cache
 │   │   └── services/api.js      # Axios com token e tratamento de sessão expirada
 │   └── e2e/                     # Testes de interface (Playwright)
 ├── .github/workflows/ci.yml     # CI: testes, lint e build a cada push
@@ -123,39 +146,48 @@ Todas as rotas ficam sob `/api`. "Dono ou equipe" significa o autor do chamado, 
 | POST | `/login` | Autentica e retorna o token | Público |
 | GET | `/me` | Dados do usuário logado | Autenticado |
 | GET | `/chamados` | Lista com filtros, paginação e contadores ¹ | Autenticado |
-| POST | `/chamados` | Abre um chamado (`titulo`, `descricao`, `prioridade`, `categoria`) | Autenticado |
+| POST | `/chamados` | Abre um chamado (`titulo`, `descricao`, `categoria_id` da subcategoria) ³ | Autenticado |
 | GET | `/chamados/:id` | Detalhes, timeline e anexos | Dono ou equipe |
 | PUT | `/chamados/:id/status` | Atualiza o status ² | Dono ou equipe |
-| PUT | `/chamados/:id/prioridade` | Altera a prioridade | Equipe |
+| PUT | `/chamados/:id/prioridade` | Altera a prioridade (recalcula os prazos pelas metas) | Equipe |
 | PUT | `/chamados/:id/responsavel` | Define o responsável (`null` remove) | Equipe |
-| PUT | `/chamados/:id/categoria` | Altera a categoria | Equipe |
+| PUT | `/chamados/:id/categoria` | Reclassifica (`categoria_id`): prioridade e prazos seguem a nova subcategoria | Equipe |
+| PUT | `/chamados/:id/transferencia` | Transfere (`grupo_id` e/ou `responsavel_id`, `motivo` obrigatório) | Equipe |
 | POST | `/chamados/:id/interacoes` | Adiciona uma mensagem; com `"interna": true`, uma nota interna (só equipe) | Dono ou equipe |
 | POST | `/chamados/:id/anexos` | Envia um anexo (campo `anexo`) | Dono ou equipe |
 | GET | `/chamados/:id/anexos/:anexoId` | Baixa um anexo | Dono ou equipe |
-| GET | `/equipe` | Técnicos que podem receber chamados | Equipe |
+| GET | `/equipe` | Técnicos que podem receber chamados, com os grupos de cada um | Equipe |
+| GET | `/categorias` | Árvore do catálogo (`?inativas=1` inclui os desativados, só admin) | Autenticado |
+| POST | `/categorias` | Cria categoria ou subcategoria (com `parent_id`) | Admin |
+| PUT | `/categorias/:id` | Edita nome, prioridade, prazos, grupo ou ativação | Admin |
+| GET | `/grupos` | Grupos, com membros e fila pendente | Equipe |
+| POST | `/grupos` | Cria um grupo (`nome`, `descricao`, `membros`) | Admin |
+| PUT | `/grupos/:id` | Edita o grupo e define os membros | Admin |
 | GET | `/admin/resumo` | Indicadores e dados dos gráficos | Admin |
 | GET | `/usuarios` | Lista usuários, com total de chamados de cada um | Admin |
 | POST | `/usuarios` | Cria usuário já com o perfil escolhido | Admin |
 | PUT | `/usuarios/:id/perfil` | Altera o perfil de um usuário | Admin |
 | PUT | `/usuarios/:id/status` | Ativa ou desativa uma conta (`{ "ativo": false }`) | Admin |
 
-¹ Parâmetros: `status` (lista separada por vírgula), `prioridade`, `categoria`, `responsavel` (`eu`, `nenhum` ou um ID), `sla` (`estourado` ou `em_risco`), `busca`, `ordem` (`prazo`, `prioridade`, `recentes`, `antigos`, `atualizados`), `pagina` e `porPagina`. Cada chamado vem com o objeto `sla`, que traz o prazo e a situação da resposta e da solução. O perfil `comum` sempre recebe só os próprios chamados.
+¹ Parâmetros: `status` (lista separada por vírgula), `prioridade`, `categoria` (IDs; a categoria principal inclui as subcategorias), `grupo` (`meus`, `nenhum` ou IDs), `responsavel` (`eu`, `nenhum` ou um ID), `sla` (`estourado` ou `em_risco`), `busca`, `ordem` (`prazo`, `prioridade`, `recentes`, `antigos`, `atualizados`), `pagina` e `porPagina`. Cada chamado vem com o objeto `sla`, que traz o prazo e a situação da resposta e da solução. O perfil `comum` sempre recebe só os próprios chamados.
 
 ² O dono com perfil `comum` só pode marcar como `resolvido` ou reabrir (`aberto`). Quem da equipe coloca um chamado sem responsável `em andamento` passa a ser o responsável.
 
-Toda mudança de status, prioridade, categoria ou responsável fica registrada como evento na timeline do chamado. Notas internas nunca são enviadas para quem não é da equipe.
+³ A prioridade enviada no corpo é ignorada: ela vem da subcategoria, assim como os prazos e o grupo.
+
+Toda mudança de status, prioridade, categoria, responsável ou grupo (transferência, com o motivo) fica registrada como evento na timeline do chamado. Notas internas nunca são enviadas para quem não é da equipe.
 
 ## 🧪 Testes
 
 | Suíte | O que cobre | Como rodar |
 |---|---|---|
-| **Contrato** (Vitest + Supertest) | Cadastro, login, sessão, fila (filtros, busca, ordem, paginação), SLA, categorias, notas internas, status, prioridade, responsável, eventos da timeline, mensagens, anexos, indicadores e gestão de usuários | `cd backend && npm test` |
+| **Contrato** (Vitest + Supertest) | Cadastro, login, sessão, fila (filtros, busca, ordem, paginação), SLA, catálogo, grupos, transferência, notas internas, status, prioridade, responsável, eventos da timeline, mensagens, anexos, indicadores e gestão de usuários | `cd backend && npm test` |
 | **Servidor** (Vitest + Supertest) | JSON malformado, cabeçalhos de segurança, CORS, token expirado ou falsificado, senha com hash, nome do arquivo em disco e limite de tentativas de login | (junto com a anterior) |
 | **Interface** (Playwright) | Os fluxos principais no navegador, com os três perfis, incluindo celular e a persistência da demo | `cd frontend && npm run test:e2e` |
 
 Os **testes de contrato rodam duas vezes**: uma contra a API real (Express + MariaDB) e outra contra a API simulada da demonstração. Assim, se uma regra mudar só de um lado, a suíte acusa a diferença, e a demo do portfólio nunca se comporta diferente do sistema de verdade.
 
-Ao todo são 186 testes de API, com cerca de 96% das linhas cobertas (`npm run test:cobertura`), e 30 testes de interface. O [GitHub Actions](.github/workflows/ci.yml) roda tudo, mais o lint e o build, a cada push.
+Ao todo são 314 testes de API, com cerca de 98% das linhas cobertas (`npm run test:cobertura`), e 35 testes de interface. O [GitHub Actions](.github/workflows/ci.yml) roda tudo, mais o lint e o build, a cada push.
 
 **Antes de rodar os testes da API:** deixe o banco de pé (`docker compose up -d`) e instale as dependências do frontend também (`cd frontend && npm install`), porque a suíte importa a API simulada de lá. Os testes usam um banco próprio, o `helpdesk_test`, criado automaticamente: seus dados de desenvolvimento não são tocados.
 
@@ -257,6 +289,7 @@ O nome e a descrição do sistema ficam em `frontend/src/config/marca.js`, e as 
 - [x] Fila de atendimento: prioridade, responsável, filtros e paginação
 - [x] Interface corporativa responsiva com design system próprio
 - [x] SLA por prioridade, categorias e notas internas
+- [x] Catálogo de serviços em dois níveis, grupos técnicos (N1/N2) e transferência com motivo
 - [ ] Migração para TypeScript (com Prisma e Zod)
 - [x] Testes automatizados (API real, demo e interface) com CI no GitHub Actions
 - [x] Demonstração pública na Vercel (API simulada no navegador)

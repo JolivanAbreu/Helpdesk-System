@@ -5,11 +5,14 @@ import toast from "react-hot-toast";
 import {
   ArrowLeft, Send, Paperclip, FileText, Image as ImageIcon, Download, UploadCloud,
   UserCheck, SignalHigh, RefreshCw, CheckCircle2, RotateCcw, Lock, Tag, MessageSquare,
+  ArrowRightLeft, Users,
 } from "lucide-react";
 import api, { isEquipe, mensagemDeErro, DEMO_LOCAL } from "../services/api";
-import { STATUS, LISTA_STATUS, PRIORIDADES, LISTA_PRIORIDADES, CATEGORIAS, LISTA_CATEGORIAS } from "../config/dominio";
-import { codigoChamado, tempoRelativo, dataHora } from "../utils/formatar";
+import { STATUS, LISTA_STATUS, PRIORIDADES, LISTA_PRIORIDADES, iconeCategoria } from "../config/dominio";
+import { codigoChamado, tempoRelativo, dataHora, caminhoCategoria } from "../utils/formatar";
 import useAtualizacaoPeriodica from "../hooks/useAtualizacaoPeriodica";
+import { useCatalogo, useEquipe, useGrupos, acharSubcategoria } from "../hooks/useCatalogo";
+import TransferirModal from "../components/TransferirModal";
 import Button from "../components/ui/Button";
 import { Select, Textarea } from "../components/ui/Campo";
 import { StatusSelo, PrioridadeSelo, Avatar } from "../components/ui/Selos";
@@ -25,7 +28,10 @@ export default function ChamadoDetalhe() {
   const equipe = isEquipe(user);
 
   const [chamado, setChamado] = useState(null);
-  const [membrosEquipe, setMembrosEquipe] = useState([]);
+  const { equipe: membrosEquipe } = useEquipe(equipe);
+  const { grupos } = useGrupos(equipe);
+  const { catalogo } = useCatalogo();
+  const [transferindo, setTransferindo] = useState(false);
   const [mensagem, setMensagem] = useState("");
   const [modoNota, setModoNota] = useState(false); // equipe: resposta ao solicitante ou nota interna
   const [enviando, setEnviando] = useState(false);
@@ -46,10 +52,6 @@ export default function ChamadoDetalhe() {
 
   useEffect(() => { setChamado(null); carregar(); }, [carregar]);
   useAtualizacaoPeriodica(() => carregar({ silencioso: true }), 15000);
-
-  useEffect(() => {
-    if (equipe) api.get("/equipe").then(({ data }) => setMembrosEquipe(data)).catch(() => {});
-  }, [equipe]);
 
   // Altera status, prioridade ou responsável e recarrega (para trazer o evento novo)
   async function alterar(propriedade, rota, corpo, sucesso) {
@@ -227,20 +229,47 @@ export default function ChamadoDetalhe() {
 
               <Propriedade rotulo="Categoria">
                 {equipe ? (
+                  <>
                   <Select
-                    value={chamado.categoria}
+                    value={chamado.categoria_id ?? ""}
                     disabled={salvando === "categoria"}
-                    onChange={(e) => alterar("categoria", "categoria", { categoria: e.target.value }, `Categoria alterada para ${CATEGORIAS[e.target.value].rotulo}.`)}
+                    onChange={(e) => {
+                      const sub = acharSubcategoria(catalogo, Number(e.target.value));
+                      alterar("categoria", "categoria", { categoria_id: sub.id }, `Categoria alterada para ${sub.pai.nome} › ${sub.nome}. Prioridade e prazos atualizados.`);
+                    }}
                     aria-label="Categoria"
                   >
-                    {LISTA_CATEGORIAS.map((c) => <option key={c} value={c}>{CATEGORIAS[c].rotulo}</option>)}
+                    {/* Subcategoria atual desativada no catálogo: continua aparecendo */}
+                    {chamado.categoria && !acharSubcategoria(catalogo, chamado.categoria_id) && (
+                      <option value={chamado.categoria_id} disabled>{caminhoCategoria(chamado.categoria)}</option>
+                    )}
+                    {catalogo.map((pai) => (
+                      <optgroup key={pai.id} label={pai.nome}>
+                        {pai.subcategorias.map((sub) => <option key={sub.id} value={sub.id}>{sub.nome}</option>)}
+                      </optgroup>
+                    ))}
                   </Select>
+                  <p className="mt-1.5 text-xs text-aco">
+                    {chamado.categoria?.pai?.nome ? `${chamado.categoria.pai.nome} · ` : ""}trocar recalcula prioridade e prazos
+                  </p>
+                  </>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Tag className="h-3.5 w-3.5 text-aco" aria-hidden="true" />
-                    {CATEGORIAS[chamado.categoria]?.rotulo ?? "Outros"}
-                  </span>
+                  <CategoriaDoChamado categoria={chamado.categoria} />
                 )}
+              </Propriedade>
+
+              <Propriedade rotulo="Grupo">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5 shrink-0 text-aco" aria-hidden="true" />
+                    <span className="truncate">{chamado.grupo?.nome ?? "Sem grupo"}</span>
+                  </span>
+                  {equipe && chamado.status !== "resolvido" && (
+                    <Button variante="secundario" tamanho="sm" icone={ArrowRightLeft} onClick={() => setTransferindo(true)}>
+                      Transferir
+                    </Button>
+                  )}
+                </div>
               </Propriedade>
 
               <Propriedade rotulo="Responsável">
@@ -293,7 +322,7 @@ export default function ChamadoDetalhe() {
 
           <section className="rounded-lg border border-borda bg-white p-5 shadow-painel" aria-label="Prazos de atendimento">
             <h2 className="text-sm font-semibold">Prazos de atendimento</h2>
-            <p className="mt-0.5 text-xs text-aco">Definidos pela prioridade {PRIORIDADES[chamado.prioridade]?.rotulo.toLowerCase()}.</p>
+            <p className="mt-0.5 text-xs text-aco">Contados da abertura, conforme o catálogo de serviços.</p>
             <div className="mt-4 space-y-4">
               <PrazoBarra rotulo="Primeira resposta" sla={chamado.sla.resposta} inicio={chamado.createdAt} concluidoEm={chamado.primeira_resposta_em} />
               <PrazoBarra rotulo="Solução" sla={chamado.sla.solucao} inicio={chamado.createdAt} concluidoEm={chamado.resolvido_em} />
@@ -303,7 +332,31 @@ export default function ChamadoDetalhe() {
           <Anexos chamado={chamado} onEnviado={() => carregar({ silencioso: true })} />
         </aside>
       </div>
+
+      {transferindo && (
+        <TransferirModal
+          chamado={chamado}
+          grupos={grupos}
+          equipe={membrosEquipe}
+          onFechar={() => setTransferindo(false)}
+          onTransferido={async () => {
+            setTransferindo(false);
+            await carregar({ silencioso: true });
+            atualizarContadores();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+function CategoriaDoChamado({ categoria }) {
+  const Icone = categoria?.pai ? iconeCategoria(categoria.pai.icone) : Tag;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Icone className="h-3.5 w-3.5 shrink-0 text-aco" aria-hidden="true" />
+      {caminhoCategoria(categoria)}
+    </span>
   );
 }
 
@@ -398,6 +451,7 @@ function Nota({ item }) {
 }
 
 function iconeDoEvento(texto) {
+  if (/^transferiu/.test(texto)) return ArrowRightLeft;
   if (/respons|assumiu|atribuiu/.test(texto)) return UserCheck;
   if (/prioridade/.test(texto)) return SignalHigh;
   if (/categoria/.test(texto)) return Tag;

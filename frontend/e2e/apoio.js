@@ -19,3 +19,6 @@ export const aviso = (page, texto) => page.getByText(texto, { exact: false }).fi
 // Mensagem já publicada na conversa (não confunde com o texto ainda no campo de digitação)
 export const mensagemNaConversa = (page, texto) =>
   page.getByRole("region", { name: "Conversa" }).getByRole("listitem").filter({ hasText: texto });
+
+// Escolhe uma opção em cartão (rádio visualmente oculto): clica no cartão, como a pessoa faria
+export const escolher = (escopo, nome) => escopo.getByRole("radio", { name: nome }).locator("xpath=ancestor::label[1]").click();

@@ -20,6 +20,15 @@ export const PRIORIDADES = {
 };
 export const LISTA_PRIORIDADES = Object.keys(PRIORIDADES);
 
+// Metas de atendimento por prioridade, em horas (iguais às do backend).
+// São o ponto de partida ao criar uma subcategoria no catálogo.
+export const METAS_SLA = {
+  critica: { resposta: 1, solucao: 4 },
+  alta: { resposta: 2, solucao: 8 },
+  media: { resposta: 4, solucao: 24 },
+  baixa: { resposta: 8, solucao: 72 },
+};
+
 export const PERFIS = {
   comum: { rotulo: "Colaborador", descricao: "Abre e acompanha os próprios chamados" },
   suporte: { rotulo: "Suporte", descricao: "Atende todos os chamados" },
@@ -27,15 +36,17 @@ export const PERFIS = {
 };
 export const LISTA_PERFIS = Object.keys(PERFIS);
 
-export const CATEGORIAS = {
-  hardware: { rotulo: "Hardware", icone: Cpu, exemplo: "Computador, impressora, monitor, periféricos" },
-  software: { rotulo: "Software e sistemas", icone: AppWindow, exemplo: "Programas, sistemas internos, licenças" },
-  rede: { rotulo: "Rede e internet", icone: Wifi, exemplo: "Internet, VPN, Wi-Fi, telefone" },
-  acessos: { rotulo: "Acessos e senhas", icone: KeyRound, exemplo: "Senha, permissões, novo usuário" },
-  email: { rotulo: "E-mail", icone: Mail, exemplo: "Caixa de entrada, Outlook, envio" },
-  outros: { rotulo: "Outros", icone: Shapes, exemplo: "Qualquer outro assunto" },
+// Ícones das categorias principais do catálogo (o campo "icone" da API)
+export const ICONES_CATEGORIA = {
+  hardware: { rotulo: "Hardware", icone: Cpu },
+  software: { rotulo: "Software", icone: AppWindow },
+  rede: { rotulo: "Rede", icone: Wifi },
+  acessos: { rotulo: "Acessos", icone: KeyRound },
+  email: { rotulo: "E-mail", icone: Mail },
+  outros: { rotulo: "Outros", icone: Shapes },
 };
-export const LISTA_CATEGORIAS = Object.keys(CATEGORIAS);
+export const LISTA_ICONES = Object.keys(ICONES_CATEGORIA);
+export const iconeCategoria = (chave) => (ICONES_CATEGORIA[chave] || ICONES_CATEGORIA.outros).icone;
 
 // Situação de um prazo de SLA (resposta ou solução)
 export const SITUACOES_SLA = {

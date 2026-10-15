@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { entrarComo, aviso } from "./apoio";
+import { entrarComo, aviso, escolher } from "./apoio";
 
 test.describe("Administração", () => {
   test.beforeEach(async ({ page }) => {
@@ -20,6 +20,50 @@ test.describe("Administração", () => {
 
     await page.getByRole("button", { name: "Ver tabela" }).click();
     await expect(page.getByRole("columnheader", { name: "Dia" })).toBeVisible();
+  });
+
+  test("mostra a fila de cada grupo técnico", async ({ page }) => {
+    await expect(page.getByText("Fila por grupo")).toBeVisible();
+    const linha = page.getByRole("row", { name: /Infraestrutura \(N2\)/ });
+    await expect(linha).toContainText("3");
+    await linha.getByRole("link").click();
+    await expect(page).toHaveURL(/\/chamados\?grupo=2/);
+  });
+
+  test("edita uma subcategoria do catálogo e o próximo chamado já segue a regra nova", async ({ page }) => {
+    await page.getByRole("button", { name: "Catálogo" }).click();
+    await page.getByRole("button", { name: "Editar Hardware › Monitor e vídeo" }).click();
+
+    const janela = page.getByRole("dialog", { name: "Editar subcategoria" });
+    await janela.getByLabel("Prioridade").selectOption("critica");
+    await janela.getByLabel("Primeira resposta (horas)").fill("0.5");
+    await janela.getByLabel("Solução (horas)").fill("3");
+    await janela.getByRole("button", { name: "Salvar" }).click();
+    await expect(aviso(page, "Catálogo atualizado.")).toBeVisible();
+    const linha = page.getByRole("row", { name: /Monitor e vídeo/ });
+    await expect(linha).toContainText("Crítica");
+    await expect(linha).toContainText("30 min");
+
+    await page.keyboard.press("n");
+    const novo = page.getByRole("dialog", { name: "Novo chamado" });
+    await escolher(novo, /^Hardware/);
+    await escolher(novo, /^Monitor e vídeo/);
+    await expect(novo).toContainText("Resposta em até 30 min");
+    await expect(novo).toContainText("solução em até 3 h");
+  });
+
+  test("cria um grupo técnico com membros", async ({ page }) => {
+    await page.getByRole("button", { name: "Grupos" }).click();
+    await expect(page.getByRole("region", { name: "Service Desk (N1)" })).toContainText("Rafael Costa");
+    await page.getByRole("button", { name: "Novo grupo" }).click();
+
+    const janela = page.getByRole("dialog", { name: "Novo grupo" });
+    await janela.getByLabel("Nome").fill("Field Service");
+    await janela.getByRole("checkbox", { name: /Carlos Lima/ }).check();
+    await janela.getByRole("button", { name: "Criar grupo" }).click();
+
+    await expect(aviso(page, 'Grupo "Field Service" criado.')).toBeVisible();
+    await expect(page.getByRole("region", { name: "Field Service" })).toContainText("Carlos Lima");
   });
 
   test("cria um técnico de suporte", async ({ page }) => {

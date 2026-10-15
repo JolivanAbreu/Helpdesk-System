@@ -67,3 +67,18 @@ export function textoPrazo(prazoSla, agora = Date.now()) {
     default: return "";
   }
 }
+
+// Categoria do chamado: "Hardware › Impressora"
+export function caminhoCategoria(categoria) {
+  if (!categoria) return "Sem categoria";
+  return categoria.pai ? `${categoria.pai.nome} › ${categoria.nome}` : categoria.nome;
+}
+
+// Prazo do catálogo em horas: 0.5 -> "30 min" | 8 -> "8 h" | 72 -> "3 dias"
+export function horasDePrazo(horas) {
+  const h = Number(horas);
+  if (!Number.isFinite(h)) return "—";
+  if (h < 1) return `${Math.round(h * 60)} min`;
+  if (h >= 24 && h % 24 === 0) return `${h / 24} dia${h > 24 ? "s" : ""}`;
+  return `${h.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} h`;
+}

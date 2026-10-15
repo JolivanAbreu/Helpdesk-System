@@ -4,7 +4,7 @@ import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { UserPlus, Search, Users, CircleCheck } from "lucide-react";
 import api, { mensagemDeErro } from "../services/api";
-import { PERFIS, LISTA_PERFIS, PRIORIDADES, LISTA_PRIORIDADES, CATEGORIAS } from "../config/dominio";
+import { PERFIS, LISTA_PERFIS, PRIORIDADES, LISTA_PRIORIDADES, iconeCategoria } from "../config/dominio";
 import { codigoChamado, tempoRelativo, duracaoHoras, dataCurta } from "../utils/formatar";
 import Cabecalho from "../components/layout/Cabecalho";
 import Button from "../components/ui/Button";
@@ -15,28 +15,32 @@ import { Esqueleto, Vazio } from "../components/ui/Estados";
 import GraficoPorDia from "../components/admin/GraficoPorDia";
 import { PrazoTexto } from "../components/ui/Prazo";
 import NovoUsuarioModal from "../components/NovoUsuarioModal";
+import GestaoCatalogo from "../components/admin/GestaoCatalogo";
+import GestaoGrupos from "../components/admin/GestaoGrupos";
 
 const ABAS = [
-  { id: "visao-geral", rotulo: "Visão geral" },
-  { id: "usuarios", rotulo: "Usuários" },
+  { id: "visao-geral", rotulo: "Visão geral", Componente: VisaoGeral },
+  { id: "catalogo", rotulo: "Catálogo", Componente: GestaoCatalogo },
+  { id: "grupos", rotulo: "Grupos", Componente: GestaoGrupos },
+  { id: "usuarios", rotulo: "Usuários", Componente: GestaoUsuarios },
 ];
 
 export default function Admin() {
   const [params, setParams] = useSearchParams();
-  const aba = params.get("aba") === "usuarios" ? "usuarios" : "visao-geral";
+  const aba = ABAS.find((a) => a.id === params.get("aba")) || ABAS[0];
 
   return (
     <>
-      <Cabecalho titulo="Administração" descricao="Acompanhe o atendimento e gerencie quem usa o sistema." />
-      <div className="mb-6 border-b border-borda">
-        <nav className="flex gap-1" aria-label="Seções da administração">
+      <Cabecalho titulo="Administração" descricao="Acompanhe o atendimento, configure o catálogo e gerencie quem usa o sistema." />
+      <div className="-mx-4 mb-6 overflow-x-auto border-b border-borda sm:mx-0">
+        <nav className="flex gap-1 px-4 sm:px-0" aria-label="Seções da administração">
           {ABAS.map((a) => (
             <button
               key={a.id}
-              onClick={() => setParams(a.id === "usuarios" ? { aba: "usuarios" } : {}, { replace: true })}
-              aria-current={aba === a.id ? "page" : undefined}
-              className={`border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
-                aba === a.id ? "border-azul text-marinho" : "border-transparent text-aco hover:text-marinho"
+              onClick={() => setParams(a.id === ABAS[0].id ? {} : { aba: a.id }, { replace: true })}
+              aria-current={aba.id === a.id ? "page" : undefined}
+              className={`whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+                aba.id === a.id ? "border-azul text-marinho" : "border-transparent text-aco hover:text-marinho"
               }`}
             >
               {a.rotulo}
@@ -44,7 +48,7 @@ export default function Admin() {
           ))}
         </nav>
       </div>
-      {aba === "usuarios" ? <GestaoUsuarios /> : <VisaoGeral />}
+      <aba.Componente />
     </>
   );
 }
@@ -106,10 +110,12 @@ function VisaoGeral() {
         <PendentesPorPrioridade valores={chamados.pendentesPorPrioridade} total={pendentes} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+      <div className="grid gap-6 xl:grid-cols-2">
+        <FilaPorGrupo grupos={resumo.porGrupo} />
         <PorCategoria dados={resumo.porCategoria} />
-        <DesempenhoEquipe equipe={resumo.equipe} />
       </div>
+
+      <DesempenhoEquipe equipe={resumo.equipe} />
 
       <PendentesAntigos chamados={resumo.pendentesMaisAntigos} />
     </div>
@@ -164,15 +170,14 @@ function PorCategoria({ dados }) {
       <h2 className="font-semibold">Chamados por categoria</h2>
       <p className="mt-1 text-sm text-aco">Abertos nos últimos 30 dias</p>
       <ul className="mt-5 space-y-3.5">
-        {ordenados.map(({ categoria, total, pendentes }) => {
-          const info = CATEGORIAS[categoria] || CATEGORIAS.outros;
-          const Icone = info.icone;
+        {ordenados.map(({ id, nome, icone, total, pendentes }) => {
+          const Icone = iconeCategoria(icone);
           return (
-            <li key={categoria} title={`${info.rotulo}: ${total} chamado(s), ${pendentes} pendente(s)`}>
+            <li key={id} title={`${nome}: ${total} chamado(s), ${pendentes} pendente(s)`}>
               <div className="flex items-center justify-between gap-2 text-sm">
                 <span className="inline-flex items-center gap-1.5">
                   <Icone className="h-3.5 w-3.5 text-aco" aria-hidden="true" />
-                  {info.rotulo}
+                  {nome}
                 </span>
                 <span className="num text-xs text-aco">
                   <span className="text-sm font-medium text-marinho">{total}</span>
@@ -186,6 +191,45 @@ function PorCategoria({ dados }) {
           );
         })}
       </ul>
+    </section>
+  );
+}
+
+// Fila atual de cada grupo técnico, com link para a fila filtrada
+function FilaPorGrupo({ grupos }) {
+  return (
+    <section className="rounded-lg border border-borda bg-white shadow-painel">
+      <div className="p-5 pb-3">
+        <h2 className="font-semibold">Fila por grupo</h2>
+        <p className="mt-1 text-sm text-aco">Chamados pendentes em cada grupo técnico</p>
+      </div>
+      <div className="relative overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="border-y border-borda bg-nevoa/60 text-left text-xs text-aco">
+            <tr>
+              <th className="px-5 py-2 font-medium">Grupo</th>
+              <th className="px-3 py-2 text-right font-medium">Pendentes</th>
+              <th className="px-3 py-2 text-right font-medium">Sem responsável</th>
+              <th className="px-5 py-2 text-right font-medium">Atrasados</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-borda">
+            {grupos.map((g) => (
+              <tr key={g.id} className="relative hover:bg-nevoa/50">
+                <td className="px-5 py-3">
+                  <Link to={`/chamados?grupo=${g.id}`} className="inline-flex items-center gap-2 font-medium after:absolute after:inset-0">
+                    <Users className="h-4 w-4 text-aco" aria-hidden="true" />
+                    {g.nome}
+                  </Link>
+                </td>
+                <td className="num px-3 py-3 text-right">{g.pendentes}</td>
+                <td className={`num px-3 py-3 text-right ${g.semResponsavel ? "font-medium text-prioridade-alta" : "text-aco"}`}>{g.semResponsavel}</td>
+                <td className={`num px-5 py-3 text-right ${g.estourados ? "font-medium text-prioridade-critica" : "text-aco"}`}>{g.estourados}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -251,7 +295,7 @@ function PendentesAntigos({ chamados }) {
                     {c.titulo}
                   </Link>
                   <p className="mt-0.5 truncate text-xs text-aco">
-                    Aberto {tempoRelativo(c.createdAt)}, {c.responsavel ? `com ${c.responsavel.nome}` : "sem responsável"}
+                    Aberto {tempoRelativo(c.createdAt)}{c.grupo ? ` · ${c.grupo.nome}` : ""} · {c.responsavel ? `com ${c.responsavel.nome}` : "sem responsável"}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">

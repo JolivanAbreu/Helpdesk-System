@@ -28,11 +28,27 @@ test.describe("Fila de chamados", () => {
     for (const linha of await linhas(page).all()) await expect(linha).toContainText(/Atrasado há/);
   });
 
-  test("filtra por categoria", async ({ page }) => {
-    await page.getByLabel("Categoria").selectOption("rede");
-    await expect(page).toHaveURL(/categoria=rede/);
+  test("filtra por categoria principal (com todas as subcategorias) e por subcategoria", async ({ page }) => {
+    await page.getByLabel("Categoria").selectOption({ label: "Rede e internet (todas)" });
+    await expect(page).toHaveURL(/categoria=14/);
     await expect(linhas(page)).toHaveCount(2);
     for (const linha of await linhas(page).all()) await expect(linha).toContainText("Rede e internet");
+
+    await page.getByLabel("Categoria").selectOption({ label: "VPN" });
+    await expect(linhas(page)).toHaveCount(1);
+    await expect(linhas(page).first()).toContainText("Sem acesso à VPN");
+  });
+
+  test("aba e filtro de grupo técnico", async ({ page }) => {
+    // Rafael está no Service Desk (N1) e na Infraestrutura (N2): todos os 6 pendentes
+    const abas = page.getByRole("navigation", { name: "Filtros rápidos" });
+    await abas.getByRole("button", { name: /Do meu grupo\s*6/ }).click();
+    await expect(page).toHaveURL(/aba=meu-grupo/);
+    await expect(linhas(page)).toHaveCount(6);
+
+    await page.getByLabel("Grupo").selectOption({ label: "Infraestrutura (N2)" });
+    await expect(linhas(page)).toHaveCount(3);
+    for (const linha of await linhas(page).all()) await expect(linha).toContainText("Infraestrutura (N2)");
   });
 
   test("assumir pela lista atualiza a aba e o menu lateral", async ({ page }) => {
