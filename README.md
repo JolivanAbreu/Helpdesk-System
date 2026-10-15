@@ -13,6 +13,8 @@ Nasceu da minha rotina como Analista de Suporte N1: a ideia é reproduzir o cicl
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=flat&logo=tailwindcss&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
 
+**[Abrir a demonstração](https://nexodesk.vercel.app)**: as contas de acesso aparecem na tela de login.
+
 ![Fila de chamados](docs/screenshots/fila.png)
 
 ## ✨ Funcionalidades
@@ -74,6 +76,7 @@ Helpdesk-System/
 │       │   ├── layout/      # Barra lateral, cabeçalho de página, tela de login
 │       │   └── admin/       # Gráfico de chamados por dia
 │       ├── config/          # Marca (nome do sistema) e rótulos de domínio
+│       ├── demo/            # API simulada para a demonstração sem servidor
 │       ├── hooks/           # Atualização periódica
 │       └── services/api.js  # Axios com token e tratamento de sessão expirada
 ├── docs/screenshots/
@@ -112,6 +115,23 @@ Todas as rotas ficam sob `/api`. "Dono ou equipe" significa o autor do chamado, 
 ² O dono com perfil `comum` só pode marcar como `resolvido` ou reabrir (`aberto`). Quem da equipe coloca um chamado sem responsável `em andamento` passa a ser o responsável.
 
 Toda mudança de status, prioridade ou responsável fica registrada como evento na timeline do chamado.
+
+## 🌐 Demonstração online (Vercel)
+
+A demonstração pública roda **só com o frontend**: com `VITE_DEMO_LOCAL=true`, as chamadas à API são respondidas por uma API simulada no próprio navegador (`frontend/src/demo/`). Ela tem as mesmas rotas, regras de acesso e dados de exemplo do backend, e guarda tudo no `localStorage` de cada visitante. Não precisa de servidor nem de banco, não tem custo e não "dorme".
+
+Fora da demo, esse código nem entra no pacote: o build normal continua usando a API real.
+
+**Publicar na Vercel**
+
+1. Em [vercel.com](https://vercel.com), **Add New → Project** e importe o repositório `Helpdesk-System`.
+2. Em **Root Directory**, escolha `frontend`. O `vercel.json` já define o build e o redirecionamento das rotas.
+3. Em **Environment Variables**, adicione `VITE_DEMO_LOCAL` = `true`.
+4. Clique em **Deploy**. Para usar o endereço `nexodesk.vercel.app`, dê ao projeto o nome `nexodesk` (ou ajuste o link no topo deste README).
+
+A cada `git push`, a Vercel publica a nova versão sozinha.
+
+**Limites da demo:** os dados ficam só no navegador de quem visita (cada pessoa tem a sua cópia), anexos vão até 1 MB e a faixa no topo permite restaurar os dados de exemplo.
 
 ## 🚀 Como rodar localmente
 
@@ -194,7 +214,7 @@ O nome e a descrição do sistema ficam em `frontend/src/config/marca.js`, e as 
 - [x] Interface corporativa responsiva com design system próprio
 - [ ] Migração para TypeScript (com Prisma e Zod)
 - [ ] Testes automatizados da API
-- [ ] Deploy (Railway)
+- [x] Demonstração pública na Vercel (API simulada no navegador)
 - [ ] Troca de senha e recuperação por e-mail
 
 ---

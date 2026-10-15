@@ -2,19 +2,19 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import api, { TOKEN_KEY, USER_KEY, AVISO_KEY, mensagemDeErro } from "../services/api";
+import api, { TOKEN_KEY, USER_KEY, AVISO_KEY, DEMO_LOCAL, mensagemDeErro } from "../services/api";
 import AuthLayout from "../components/layout/AuthLayout";
 import Campo, { Input } from "../components/ui/Campo";
 import Button from "../components/ui/Button";
 import CampoSenha from "../components/CampoSenha";
 
-// Contas do seed, exibidas só quando VITE_MODO_DEMO=true (útil em portfólio)
+// Contas do seed, exibidas com VITE_MODO_DEMO=true ou na demo sem servidor (útil em portfólio)
 const CONTAS_DEMO = [
   { perfil: "Colaborador", email: "usuario@helpdesk.com" },
   { perfil: "Suporte", email: "suporte@helpdesk.com" },
   { perfil: "Administrador", email: "admin@helpdesk.com" },
 ];
-const MODO_DEMO = import.meta.env.VITE_MODO_DEMO === "true";
+const MODO_DEMO = import.meta.env.VITE_MODO_DEMO === "true" || DEMO_LOCAL;
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -76,7 +76,10 @@ export default function Login() {
       {MODO_DEMO && (
         <div className="mt-10 rounded-md border border-borda p-4">
           <p className="text-sm font-medium">Contas de demonstração</p>
-          <p className="mt-0.5 text-xs text-aco">Senha de todas: 123456. Clique para entrar.</p>
+          <p className="mt-0.5 text-xs text-aco">
+            Senha de todas: 123456. Clique para entrar.
+            {DEMO_LOCAL && " Tudo o que você fizer fica salvo só neste navegador."}
+          </p>
           <div className="mt-3 grid gap-2">
             {CONTAS_DEMO.map((conta) => (
               <button

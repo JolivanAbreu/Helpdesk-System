@@ -5,11 +5,23 @@ export const TOKEN_KEY = '@HelpDesk:token';
 export const USER_KEY = '@HelpDesk:user';
 export const AVISO_KEY = '@HelpDesk:aviso';
 
+// Demonstração sem servidor (ex.: publicada na Vercel): as chamadas são
+// respondidas por uma API simulada no navegador (src/demo/adaptador.js).
+export const DEMO_LOCAL = import.meta.env.VITE_DEMO_LOCAL === 'true';
+
 const api = axios.create({
     // Definido em frontend/.env (veja o .env.example). Em produção,
     // aponta para a URL pública do backend.
     baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
 });
+
+if (DEMO_LOCAL) {
+    // Carregado sob demanda: fora da demo, esse código nem é baixado
+    api.defaults.adapter = async (config) => {
+        const { default: adaptadorDemo } = await import('../demo/adaptador');
+        return adaptadorDemo(config);
+    };
+}
 
 // Adiciona o token de autenticação em todas as chamadas
 api.interceptors.request.use((config) => {

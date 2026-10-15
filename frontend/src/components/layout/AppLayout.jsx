@@ -2,12 +2,13 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Inbox, UserCheck, ShieldCheck, LogOut, Menu, Plus, X } from "lucide-react";
-import api, { TOKEN_KEY, USER_KEY, usuarioLogado, isEquipe } from "../../services/api";
+import api, { TOKEN_KEY, USER_KEY, DEMO_LOCAL, usuarioLogado, isEquipe } from "../../services/api";
 import { PERFIS } from "../../config/dominio";
 import Logo from "../ui/Logo";
 import Button from "../ui/Button";
 import { Avatar, Contador } from "../ui/Selos";
 import NovoChamadoModal from "../NovoChamadoModal";
+import AvisoDemo from "../AvisoDemo";
 
 // Estrutura das páginas logadas: barra lateral + conteúdo.
 // As páginas recebem { user, abrirNovoChamado, atualizarContadores } via useOutletContext().
@@ -102,6 +103,8 @@ export default function AppLayout() {
           </aside>
         </div>
       )}
+
+      {DEMO_LOCAL && <AvisoDemo />}
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
         <Outlet context={{ user, abrirNovoChamado: () => setNovoAberto(true), atualizarContadores }} />

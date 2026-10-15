@@ -6,7 +6,7 @@ import {
   ArrowLeft, Send, Paperclip, FileText, Image as ImageIcon, Download, UploadCloud,
   UserCheck, SignalHigh, RefreshCw, CheckCircle2, RotateCcw,
 } from "lucide-react";
-import api, { isEquipe, mensagemDeErro } from "../services/api";
+import api, { isEquipe, mensagemDeErro, DEMO_LOCAL } from "../services/api";
 import { STATUS, LISTA_STATUS, PRIORIDADES, LISTA_PRIORIDADES } from "../config/dominio";
 import { codigoChamado, tempoRelativo, dataHora } from "../utils/formatar";
 import useAtualizacaoPeriodica from "../hooks/useAtualizacaoPeriodica";
@@ -410,7 +410,7 @@ function Anexos({ chamado, onEnviado }) {
       >
         <UploadCloud className="h-5 w-5 text-aco" aria-hidden="true" />
         <span className="text-sm font-medium">{arrastando ? "Solte para enviar" : "Arraste um arquivo ou clique"}</span>
-        <span className="text-xs text-aco">Imagens ou PDF, até 10 MB</span>
+        <span className="text-xs text-aco">Imagens ou PDF, até {DEMO_LOCAL ? 1 : 10} MB</span>
         <input
           ref={entrada}
           type="file"
