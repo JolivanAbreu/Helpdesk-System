@@ -22,24 +22,32 @@ Nasceu da minha rotina como Analista de Suporte N1: a ideia é reproduzir o cicl
 
 ## ✨ Funcionalidades
 
+**Prazos de atendimento (SLA)**
+- Cada prioridade define um prazo de primeira resposta e um de solução (ver tabela abaixo)
+- A fila mostra quanto falta ou há quanto tempo o prazo venceu, e começa pelos mais atrasados
+- Aba "Atrasados", barras de prazo consumido no chamado e indicadores de cumprimento no painel do admin
+- A primeira mensagem da equipe ao solicitante registra a resposta; mudar a prioridade recalcula os prazos
+
 **Fila de atendimento**
 - Prioridade (crítica, alta, média, baixa) com faixa colorida em cada chamado para triagem rápida
+- Categorias (hardware, software, rede, acessos, e-mail, outros), escolhidas na abertura e ajustáveis pela equipe
 - Responsável por chamado: assumir pela lista, atribuir a outro técnico ou devolver para a fila
 - Abas com contadores: pendentes, atribuídos a mim, sem responsável, resolvidos e todos
-- Busca por assunto, descrição ou código (`CH-0042`), filtro por prioridade, ordenação e paginação
+- Busca por assunto, descrição ou código (`CH-0042`), filtros por prioridade e categoria, ordenação e paginação
 - Filtros guardados na URL, então um link já abre a fila filtrada
 - Lista e conversa se atualizam sozinhas enquanto a aba está aberta
 
 **Chamado**
 - Conversa em estilo chat com o histórico automático de eventos ("Rafael assumiu o chamado", "alterou a prioridade de média para alta")
-- Painel de propriedades: status, prioridade e responsável editáveis pela equipe
+- Notas internas: anotações da equipe dentro do chamado que o solicitante não vê
+- Painel de propriedades: status, prioridade, categoria e responsável editáveis pela equipe
 - Anexos com arrastar e soltar e download autenticado
 - Envio de mensagem com `Ctrl + Enter`; tecla `N` abre um novo chamado de qualquer tela
 
 **Administração**
-- Indicadores: pendentes, sem responsável, resolvidos e tempo médio de resolução
+- Indicadores: pendentes, prazos estourados, resolvidos dentro do prazo e tempo médio de resolução
 - Gráfico de chamados abertos x resolvidos nos últimos 14 dias (com visualização em tabela)
-- Pendentes por prioridade, desempenho de cada técnico e chamados parados há mais tempo
+- Pendentes por prioridade, chamados por categoria, desempenho de cada técnico (com % no prazo) e chamados parados há mais tempo
 - Gestão de usuários: criar já com perfil, promover, desativar e reativar contas
 
 **Segurança**
@@ -47,6 +55,19 @@ Nasceu da minha rotina como Analista de Suporte N1: a ideia é reproduzir o cicl
 - Perfis `comum` (colaborador), `suporte` e `admin`, com o cadastro público sempre como `comum`
 - Controle de acesso por chamado; conta desativada perde o acesso na hora
 - Validação de entrada, tratamento central de erros, rate limit no login, Helmet e CORS restrito
+
+### Metas de atendimento
+
+Definidas em `backend/src/config/perfis.js`, em horas corridas a partir da abertura:
+
+| Prioridade | Primeira resposta | Solução |
+|---|---|---|
+| Crítica | 1 h | 4 h |
+| Alta | 2 h | 8 h |
+| Média | 4 h | 24 h |
+| Baixa | 8 h | 72 h |
+
+Um prazo em aberto fica **no prazo**, **em risco** (a partir de 75% do tempo consumido) ou **estourado**. Depois de concluído, fica **cumprido** ou **violado**. Notas internas não contam como resposta.
 
 ## 🖼️ Telas
 
@@ -70,7 +91,7 @@ Helpdesk-System/
 │   │   ├── database/            # Conexão, migrations e seeders (Sequelize)
 │   │   ├── middleware/          # Auth JWT, permissões, acesso ao chamado, erros
 │   │   ├── models/              # Usuario, Chamado, Interacao, Anexo
-│   │   ├── services/            # Registro de eventos na timeline
+│   │   ├── services/            # Eventos da timeline e cálculo do SLA
 │   │   └── utils/               # Validação de entrada
 │   └── tests/                   # Contrato (API real + demo) e servidor
 ├── frontend/                    # SPA (React 19 + Vite + Tailwind)
@@ -102,12 +123,13 @@ Todas as rotas ficam sob `/api`. "Dono ou equipe" significa o autor do chamado, 
 | POST | `/login` | Autentica e retorna o token | Público |
 | GET | `/me` | Dados do usuário logado | Autenticado |
 | GET | `/chamados` | Lista com filtros, paginação e contadores ¹ | Autenticado |
-| POST | `/chamados` | Abre um chamado (`titulo`, `descricao`, `prioridade`) | Autenticado |
+| POST | `/chamados` | Abre um chamado (`titulo`, `descricao`, `prioridade`, `categoria`) | Autenticado |
 | GET | `/chamados/:id` | Detalhes, timeline e anexos | Dono ou equipe |
 | PUT | `/chamados/:id/status` | Atualiza o status ² | Dono ou equipe |
 | PUT | `/chamados/:id/prioridade` | Altera a prioridade | Equipe |
 | PUT | `/chamados/:id/responsavel` | Define o responsável (`null` remove) | Equipe |
-| POST | `/chamados/:id/interacoes` | Adiciona uma mensagem | Dono ou equipe |
+| PUT | `/chamados/:id/categoria` | Altera a categoria | Equipe |
+| POST | `/chamados/:id/interacoes` | Adiciona uma mensagem; com `"interna": true`, uma nota interna (só equipe) | Dono ou equipe |
 | POST | `/chamados/:id/anexos` | Envia um anexo (campo `anexo`) | Dono ou equipe |
 | GET | `/chamados/:id/anexos/:anexoId` | Baixa um anexo | Dono ou equipe |
 | GET | `/equipe` | Técnicos que podem receber chamados | Equipe |
@@ -117,23 +139,23 @@ Todas as rotas ficam sob `/api`. "Dono ou equipe" significa o autor do chamado, 
 | PUT | `/usuarios/:id/perfil` | Altera o perfil de um usuário | Admin |
 | PUT | `/usuarios/:id/status` | Ativa ou desativa uma conta (`{ "ativo": false }`) | Admin |
 
-¹ Parâmetros: `status` (lista separada por vírgula), `prioridade`, `responsavel` (`eu`, `nenhum` ou um ID), `busca`, `ordem` (`prioridade`, `recentes`, `antigos`, `atualizados`), `pagina` e `porPagina`. O perfil `comum` sempre recebe só os próprios chamados.
+¹ Parâmetros: `status` (lista separada por vírgula), `prioridade`, `categoria`, `responsavel` (`eu`, `nenhum` ou um ID), `sla` (`estourado` ou `em_risco`), `busca`, `ordem` (`prazo`, `prioridade`, `recentes`, `antigos`, `atualizados`), `pagina` e `porPagina`. Cada chamado vem com o objeto `sla`, que traz o prazo e a situação da resposta e da solução. O perfil `comum` sempre recebe só os próprios chamados.
 
 ² O dono com perfil `comum` só pode marcar como `resolvido` ou reabrir (`aberto`). Quem da equipe coloca um chamado sem responsável `em andamento` passa a ser o responsável.
 
-Toda mudança de status, prioridade ou responsável fica registrada como evento na timeline do chamado.
+Toda mudança de status, prioridade, categoria ou responsável fica registrada como evento na timeline do chamado. Notas internas nunca são enviadas para quem não é da equipe.
 
 ## 🧪 Testes
 
 | Suíte | O que cobre | Como rodar |
 |---|---|---|
-| **Contrato** (Vitest + Supertest) | Cadastro, login, sessão, fila (filtros, busca, ordem, paginação), status, prioridade, responsável, eventos da timeline, mensagens, anexos, indicadores e gestão de usuários | `cd backend && npm test` |
+| **Contrato** (Vitest + Supertest) | Cadastro, login, sessão, fila (filtros, busca, ordem, paginação), SLA, categorias, notas internas, status, prioridade, responsável, eventos da timeline, mensagens, anexos, indicadores e gestão de usuários | `cd backend && npm test` |
 | **Servidor** (Vitest + Supertest) | JSON malformado, cabeçalhos de segurança, CORS, token expirado ou falsificado, senha com hash, nome do arquivo em disco e limite de tentativas de login | (junto com a anterior) |
 | **Interface** (Playwright) | Os fluxos principais no navegador, com os três perfis, incluindo celular e a persistência da demo | `cd frontend && npm run test:e2e` |
 
 Os **testes de contrato rodam duas vezes**: uma contra a API real (Express + MariaDB) e outra contra a API simulada da demonstração. Assim, se uma regra mudar só de um lado, a suíte acusa a diferença, e a demo do portfólio nunca se comporta diferente do sistema de verdade.
 
-Ao todo são 154 testes de API, com cerca de 96% das linhas cobertas (`npm run test:cobertura`), e 24 testes de interface. O [GitHub Actions](.github/workflows/ci.yml) roda tudo, mais o lint e o build, a cada push.
+Ao todo são 186 testes de API, com cerca de 96% das linhas cobertas (`npm run test:cobertura`), e 30 testes de interface. O [GitHub Actions](.github/workflows/ci.yml) roda tudo, mais o lint e o build, a cada push.
 
 **Antes de rodar os testes da API:** deixe o banco de pé (`docker compose up -d`) e instale as dependências do frontend também (`cd frontend && npm install`), porque a suíte importa a API simulada de lá. Os testes usam um banco próprio, o `helpdesk_test`, criado automaticamente: seus dados de desenvolvimento não são tocados.
 
@@ -234,6 +256,7 @@ O nome e a descrição do sistema ficam em `frontend/src/config/marca.js`, e as 
 - [x] Tela de administração (indicadores e gestão de usuários)
 - [x] Fila de atendimento: prioridade, responsável, filtros e paginação
 - [x] Interface corporativa responsiva com design system próprio
+- [x] SLA por prioridade, categorias e notas internas
 - [ ] Migração para TypeScript (com Prisma e Zod)
 - [x] Testes automatizados (API real, demo e interface) com CI no GitHub Actions
 - [x] Demonstração pública na Vercel (API simulada no navegador)

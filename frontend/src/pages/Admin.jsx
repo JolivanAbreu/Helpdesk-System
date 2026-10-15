@@ -4,7 +4,7 @@ import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { UserPlus, Search, Users, CircleCheck } from "lucide-react";
 import api, { mensagemDeErro } from "../services/api";
-import { PERFIS, LISTA_PERFIS, PRIORIDADES, LISTA_PRIORIDADES } from "../config/dominio";
+import { PERFIS, LISTA_PERFIS, PRIORIDADES, LISTA_PRIORIDADES, CATEGORIAS } from "../config/dominio";
 import { codigoChamado, tempoRelativo, duracaoHoras, dataCurta } from "../utils/formatar";
 import Cabecalho from "../components/layout/Cabecalho";
 import Button from "../components/ui/Button";
@@ -13,6 +13,7 @@ import { ConfirmarModal } from "../components/ui/Modal";
 import { Avatar, PrioridadeSelo, StatusSelo } from "../components/ui/Selos";
 import { Esqueleto, Vazio } from "../components/ui/Estados";
 import GraficoPorDia from "../components/admin/GraficoPorDia";
+import { PrazoTexto } from "../components/ui/Prazo";
 import NovoUsuarioModal from "../components/NovoUsuarioModal";
 
 const ABAS = [
@@ -72,7 +73,8 @@ function VisaoGeral() {
     );
   }
 
-  const { chamados, resolucao } = resumo;
+  const { chamados, resolucao, sla } = resumo;
+  const pct = (valor) => (valor === null ? "sem dados" : `${valor}%`);
   const pendentes = chamados.porStatus.aberto + chamados.porStatus["em andamento"];
 
   return (
@@ -80,9 +82,23 @@ function VisaoGeral() {
       {/* Faixa de métricas */}
       <section className="grid grid-cols-2 overflow-hidden rounded-lg border border-borda bg-white shadow-painel lg:grid-cols-4" aria-label="Indicadores">
         <Metrica rotulo="Pendentes" valor={pendentes} detalhe={`${chamados.semResponsavel} sem responsável`} alerta={chamados.semResponsavel > 0} />
-        <Metrica rotulo="Em andamento" valor={chamados.porStatus["em andamento"]} detalhe={`${chamados.porStatus.aberto} aguardando início`} />
-        <Metrica rotulo={`Resolvidos em ${resolucao.periodoDias} dias`} valor={resolucao.resolvidos} detalhe={`${chamados.total} chamados no total`} />
-        <Metrica rotulo="Tempo médio de resolução" valor={duracaoHoras(resolucao.horasMedias)} detalhe={`Nos últimos ${resolucao.periodoDias} dias`} />
+        <Metrica
+          rotulo="Com prazo estourado"
+          valor={sla.estourados}
+          detalhe={`${sla.emRisco} em risco, ${sla.semResposta} sem primeira resposta no prazo`}
+          alerta={sla.estourados > 0}
+          destaqueValor={sla.estourados > 0}
+        />
+        <Metrica
+          rotulo={`Resolvidos em ${resolucao.periodoDias} dias`}
+          valor={resolucao.resolvidos}
+          detalhe={`Tempo médio de ${duracaoHoras(resolucao.horasMedias)}`}
+        />
+        <Metrica
+          rotulo="Resolvidos dentro do prazo"
+          valor={pct(sla.solucao.percentual)}
+          detalhe={`Primeira resposta no prazo em ${pct(sla.resposta.percentual)} dos chamados`}
+        />
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
@@ -90,19 +106,21 @@ function VisaoGeral() {
         <PendentesPorPrioridade valores={chamados.pendentesPorPrioridade} total={pendentes} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+        <PorCategoria dados={resumo.porCategoria} />
         <DesempenhoEquipe equipe={resumo.equipe} />
-        <PendentesAntigos chamados={resumo.pendentesMaisAntigos} />
       </div>
+
+      <PendentesAntigos chamados={resumo.pendentesMaisAntigos} />
     </div>
   );
 }
 
-function Metrica({ rotulo, valor, detalhe, alerta }) {
+function Metrica({ rotulo, valor, detalhe, alerta, destaqueValor }) {
   return (
     <div className="border-borda p-5 [&:not(:last-child)]:border-r max-lg:[&:nth-child(2)]:border-r-0 max-lg:[&:nth-child(-n+2)]:border-b">
       <p className="text-sm text-aco">{rotulo}</p>
-      <p className="num mt-1 text-3xl font-semibold tracking-tight">{valor}</p>
+      <p className={`num mt-1 text-3xl font-semibold tracking-tight ${destaqueValor ? "text-prioridade-critica" : ""}`}>{valor}</p>
       {detalhe && (
         <p className={`mt-1 text-xs ${alerta ? "font-medium text-prioridade-alta" : "text-aco"}`}>{detalhe}</p>
       )}
@@ -137,6 +155,41 @@ function PendentesPorPrioridade({ valores, total }) {
   );
 }
 
+// Barras horizontais de uma série só: total de chamados por categoria no período
+function PorCategoria({ dados }) {
+  const ordenados = [...dados].sort((a, b) => b.total - a.total);
+  const maximo = Math.max(1, ...ordenados.map((d) => d.total));
+  return (
+    <section className="rounded-lg border border-borda bg-white p-5 shadow-painel">
+      <h2 className="font-semibold">Chamados por categoria</h2>
+      <p className="mt-1 text-sm text-aco">Abertos nos últimos 30 dias</p>
+      <ul className="mt-5 space-y-3.5">
+        {ordenados.map(({ categoria, total, pendentes }) => {
+          const info = CATEGORIAS[categoria] || CATEGORIAS.outros;
+          const Icone = info.icone;
+          return (
+            <li key={categoria} title={`${info.rotulo}: ${total} chamado(s), ${pendentes} pendente(s)`}>
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="inline-flex items-center gap-1.5">
+                  <Icone className="h-3.5 w-3.5 text-aco" aria-hidden="true" />
+                  {info.rotulo}
+                </span>
+                <span className="num text-xs text-aco">
+                  <span className="text-sm font-medium text-marinho">{total}</span>
+                  {pendentes > 0 && ` (${pendentes} pendente${pendentes > 1 ? "s" : ""})`}
+                </span>
+              </div>
+              <div className="mt-1.5 h-2 rounded-sm bg-nevoa">
+                <div className="h-2 rounded-r-[4px] rounded-l-sm bg-azul" style={{ width: `${(total / maximo) * 100}%` }} />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function DesempenhoEquipe({ equipe }) {
   return (
     <section className="rounded-lg border border-borda bg-white shadow-painel">
@@ -151,6 +204,7 @@ function DesempenhoEquipe({ equipe }) {
               <th className="px-5 py-2 font-medium">Técnico</th>
               <th className="px-3 py-2 text-right font-medium">Pendentes</th>
               <th className="px-3 py-2 text-right font-medium">Resolvidos</th>
+              <th className="px-3 py-2 text-right font-medium">No prazo</th>
               <th className="px-5 py-2 text-right font-medium">Tempo médio</th>
             </tr>
           </thead>
@@ -165,6 +219,7 @@ function DesempenhoEquipe({ equipe }) {
                 </td>
                 <td className="num px-3 py-3 text-right">{m.pendentes}</td>
                 <td className="num px-3 py-3 text-right">{m.resolvidos}</td>
+                <td className="num px-3 py-3 text-right">{m.noPrazo === null ? "—" : `${m.noPrazo}%`}</td>
                 <td className="num px-5 py-3 text-right text-aco">{m.horasMedias === null ? "—" : duracaoHoras(m.horasMedias)}</td>
               </tr>
             ))}
@@ -199,7 +254,10 @@ function PendentesAntigos({ chamados }) {
                     Aberto {tempoRelativo(c.createdAt)}, {c.responsavel ? `com ${c.responsavel.nome}` : "sem responsável"}
                   </p>
                 </div>
-                <StatusSelo status={c.status} />
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <StatusSelo status={c.status} />
+                  <PrazoTexto sla={c.sla.solucao} />
+                </div>
               </div>
             </li>
           ))}

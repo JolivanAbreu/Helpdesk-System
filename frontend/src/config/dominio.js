@@ -1,6 +1,8 @@
 // src/config/dominio.js
 // Rótulos e cores de status, prioridades e perfis usados em toda a interface.
-import { Circle, CircleDot, CircleCheck } from "lucide-react";
+import {
+  Circle, CircleDot, CircleCheck, Cpu, AppWindow, Wifi, KeyRound, Mail, Shapes,
+} from "lucide-react";
 
 export const STATUS = {
   aberto: { rotulo: "Aberto", icone: Circle, classe: "bg-azul-claro text-azul-escuro" },
@@ -24,3 +26,22 @@ export const PERFIS = {
   admin: { rotulo: "Administrador", descricao: "Atende chamados e administra o sistema" },
 };
 export const LISTA_PERFIS = Object.keys(PERFIS);
+
+export const CATEGORIAS = {
+  hardware: { rotulo: "Hardware", icone: Cpu, exemplo: "Computador, impressora, monitor, periféricos" },
+  software: { rotulo: "Software e sistemas", icone: AppWindow, exemplo: "Programas, sistemas internos, licenças" },
+  rede: { rotulo: "Rede e internet", icone: Wifi, exemplo: "Internet, VPN, Wi-Fi, telefone" },
+  acessos: { rotulo: "Acessos e senhas", icone: KeyRound, exemplo: "Senha, permissões, novo usuário" },
+  email: { rotulo: "E-mail", icone: Mail, exemplo: "Caixa de entrada, Outlook, envio" },
+  outros: { rotulo: "Outros", icone: Shapes, exemplo: "Qualquer outro assunto" },
+};
+export const LISTA_CATEGORIAS = Object.keys(CATEGORIAS);
+
+// Situação de um prazo de SLA (resposta ou solução)
+export const SITUACOES_SLA = {
+  no_prazo: { rotulo: "No prazo", tom: "neutro" },
+  em_risco: { rotulo: "Em risco", tom: "alerta" },
+  estourado: { rotulo: "Atrasado", tom: "perigo" },
+  cumprido: { rotulo: "Cumprido", tom: "sucesso" },
+  violado: { rotulo: "Fora do prazo", tom: "falha" },
+};

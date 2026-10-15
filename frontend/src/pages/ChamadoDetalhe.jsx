@@ -4,16 +4,17 @@ import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom
 import toast from "react-hot-toast";
 import {
   ArrowLeft, Send, Paperclip, FileText, Image as ImageIcon, Download, UploadCloud,
-  UserCheck, SignalHigh, RefreshCw, CheckCircle2, RotateCcw,
+  UserCheck, SignalHigh, RefreshCw, CheckCircle2, RotateCcw, Lock, Tag, MessageSquare,
 } from "lucide-react";
 import api, { isEquipe, mensagemDeErro, DEMO_LOCAL } from "../services/api";
-import { STATUS, LISTA_STATUS, PRIORIDADES, LISTA_PRIORIDADES } from "../config/dominio";
+import { STATUS, LISTA_STATUS, PRIORIDADES, LISTA_PRIORIDADES, CATEGORIAS, LISTA_CATEGORIAS } from "../config/dominio";
 import { codigoChamado, tempoRelativo, dataHora } from "../utils/formatar";
 import useAtualizacaoPeriodica from "../hooks/useAtualizacaoPeriodica";
 import Button from "../components/ui/Button";
 import { Select, Textarea } from "../components/ui/Campo";
 import { StatusSelo, PrioridadeSelo, Avatar } from "../components/ui/Selos";
 import { Esqueleto } from "../components/ui/Estados";
+import { PrazoBarra } from "../components/ui/Prazo";
 
 const TIPOS_ACEITOS = "image/jpeg,image/png,image/gif,application/pdf";
 
@@ -26,6 +27,7 @@ export default function ChamadoDetalhe() {
   const [chamado, setChamado] = useState(null);
   const [membrosEquipe, setMembrosEquipe] = useState([]);
   const [mensagem, setMensagem] = useState("");
+  const [modoNota, setModoNota] = useState(false); // equipe: resposta ao solicitante ou nota interna
   const [enviando, setEnviando] = useState(false);
   const [salvando, setSalvando] = useState(null); // qual propriedade está sendo salva
   const fimDaConversa = useRef(null);
@@ -69,7 +71,7 @@ export default function ChamadoDetalhe() {
     if (!mensagem.trim() || enviando) return;
     setEnviando(true);
     try {
-      await api.post(`/chamados/${id}/interacoes`, { mensagem });
+      await api.post(`/chamados/${id}/interacoes`, { mensagem, interna: modoNota });
       setMensagem("");
       await carregar({ silencioso: true });
       requestAnimationFrame(() => fimDaConversa.current?.scrollIntoView({ behavior: "smooth", block: "end" }));
@@ -102,7 +104,7 @@ export default function ChamadoDetalhe() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         {/* Conversa */}
-        <section className="rounded-lg border border-borda bg-white shadow-painel" aria-label="Conversa">
+        <section className="self-start rounded-lg border border-borda bg-white shadow-painel" aria-label="Conversa">
           <ol className="space-y-5 p-5 sm:p-6">
             <li className="flex gap-3">
               <Avatar nome={chamado.usuario?.nome} />
@@ -121,6 +123,8 @@ export default function ChamadoDetalhe() {
             {chamado.interacoes.map((item) =>
               item.tipo === "evento" ? (
                 <Evento key={item.id} item={item} />
+              ) : item.tipo === "nota" ? (
+                <Nota key={item.id} item={item} />
               ) : (
                 <Mensagem key={item.id} item={item} minha={item.usuario_id === user?.id} />
               )
@@ -128,7 +132,36 @@ export default function ChamadoDetalhe() {
             <li ref={fimDaConversa} aria-hidden="true" />
           </ol>
 
-          <form onSubmit={enviarMensagem} className="border-t border-borda bg-nevoa/40 p-4 sm:p-5">
+          <form
+            onSubmit={enviarMensagem}
+            className={`border-t p-4 sm:p-5 transition-colors ${modoNota ? "border-amber-200 bg-amber-50/70" : "border-borda bg-nevoa/40"}`}
+          >
+            {equipe && (
+              <div className="mb-3 inline-flex rounded-md border border-borda bg-white p-0.5 text-sm" role="radiogroup" aria-label="Tipo de mensagem">
+                {[
+                  { nota: false, rotulo: "Responder", icone: MessageSquare },
+                  { nota: true, rotulo: "Nota interna", icone: Lock },
+                ].map((opcao) => {
+                  const Icone = opcao.icone;
+                  const ativo = modoNota === opcao.nota;
+                  return (
+                    <button
+                      key={opcao.rotulo}
+                      type="button"
+                      role="radio"
+                      aria-checked={ativo}
+                      onClick={() => setModoNota(opcao.nota)}
+                      className={`inline-flex items-center gap-1.5 rounded px-3 py-1 font-medium transition-colors ${
+                        ativo ? (opcao.nota ? "bg-amber-100 text-amber-900" : "bg-azul-claro text-azul-escuro") : "text-aco hover:text-marinho"
+                      }`}
+                    >
+                      <Icone className="h-3.5 w-3.5" aria-hidden="true" />
+                      {opcao.rotulo}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <label htmlFor="nova-mensagem" className="sr-only">Nova mensagem</label>
             <Textarea
               id="nova-mensagem"
@@ -138,13 +171,21 @@ export default function ChamadoDetalhe() {
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) enviarMensagem(e);
               }}
               rows={3}
-              placeholder={equipe && !souDono ? `Responder a ${chamado.usuario?.nome?.split(" ")[0] ?? "solicitante"}` : "Escreva uma mensagem para o suporte"}
+              placeholder={
+                modoNota
+                  ? "Anotação para a equipe. O solicitante não vê."
+                  : equipe && !souDono
+                  ? `Responder a ${chamado.usuario?.nome?.split(" ")[0] ?? "solicitante"}`
+                  : "Escreva uma mensagem para o suporte"
+              }
               className="bg-white"
             />
             <div className="mt-3 flex items-center justify-between gap-3">
-              <span className="hidden text-xs text-aco sm:inline">Ctrl + Enter para enviar</span>
-              <Button type="submit" icone={Send} carregando={enviando} disabled={!mensagem.trim()} className="ml-auto">
-                Enviar
+              <span className="hidden text-xs text-aco sm:inline">
+                {modoNota ? "Visível só para a equipe. " : ""}Ctrl + Enter para enviar
+              </span>
+              <Button type="submit" icone={modoNota ? Lock : Send} carregando={enviando} disabled={!mensagem.trim()} className="ml-auto">
+                {modoNota ? "Salvar nota" : "Enviar"}
               </Button>
             </div>
           </form>
@@ -181,6 +222,24 @@ export default function ChamadoDetalhe() {
                   </Select>
                 ) : (
                   <PrioridadeSelo prioridade={chamado.prioridade} />
+                )}
+              </Propriedade>
+
+              <Propriedade rotulo="Categoria">
+                {equipe ? (
+                  <Select
+                    value={chamado.categoria}
+                    disabled={salvando === "categoria"}
+                    onChange={(e) => alterar("categoria", "categoria", { categoria: e.target.value }, `Categoria alterada para ${CATEGORIAS[e.target.value].rotulo}.`)}
+                    aria-label="Categoria"
+                  >
+                    {LISTA_CATEGORIAS.map((c) => <option key={c} value={c}>{CATEGORIAS[c].rotulo}</option>)}
+                  </Select>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Tag className="h-3.5 w-3.5 text-aco" aria-hidden="true" />
+                    {CATEGORIAS[chamado.categoria]?.rotulo ?? "Outros"}
+                  </span>
                 )}
               </Propriedade>
 
@@ -230,6 +289,15 @@ export default function ChamadoDetalhe() {
                 </Propriedade>
               </div>
             </dl>
+          </section>
+
+          <section className="rounded-lg border border-borda bg-white p-5 shadow-painel" aria-label="Prazos de atendimento">
+            <h2 className="text-sm font-semibold">Prazos de atendimento</h2>
+            <p className="mt-0.5 text-xs text-aco">Definidos pela prioridade {PRIORIDADES[chamado.prioridade]?.rotulo.toLowerCase()}.</p>
+            <div className="mt-4 space-y-4">
+              <PrazoBarra rotulo="Primeira resposta" sla={chamado.sla.resposta} inicio={chamado.createdAt} concluidoEm={chamado.primeira_resposta_em} />
+              <PrazoBarra rotulo="Solução" sla={chamado.sla.solucao} inicio={chamado.createdAt} concluidoEm={chamado.resolvido_em} />
+            </div>
           </section>
 
           <Anexos chamado={chamado} onEnviado={() => carregar({ silencioso: true })} />
@@ -305,9 +373,34 @@ function Mensagem({ item, minha }) {
   );
 }
 
+// Nota interna: só a equipe recebe estes itens da API
+function Nota({ item }) {
+  return (
+    <li className="flex gap-3">
+      <Avatar nome={item.usuario?.nome} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm">
+          <span className="font-medium">{item.usuario?.nome ?? "Usuário removido"}</span>{" "}
+          <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
+            <Lock className="h-3 w-3" aria-hidden="true" />
+            Nota interna
+          </span>{" "}
+          <time className="text-xs text-aco" dateTime={item.createdAt} title={dataHora(item.createdAt)}>
+            {tempoRelativo(item.createdAt)}
+          </time>
+        </p>
+        <div className="mt-1.5 inline-block max-w-full rounded-lg border border-dashed border-amber-300 bg-amber-50 px-4 py-2.5 leading-relaxed whitespace-pre-wrap">
+          {item.mensagem}
+        </div>
+      </div>
+    </li>
+  );
+}
+
 function iconeDoEvento(texto) {
   if (/respons|assumiu|atribuiu/.test(texto)) return UserCheck;
   if (/prioridade/.test(texto)) return SignalHigh;
+  if (/categoria/.test(texto)) return Tag;
   if (/resolvido"$/.test(texto)) return CheckCircle2;
   return RefreshCw;
 }

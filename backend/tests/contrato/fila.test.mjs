@@ -25,7 +25,7 @@ describe.each(clientes.map((c) => [c.nome, c]))('Fila de chamados (%s)', (_nome,
     expect(r.status).toBe(200);
     expect(r.data.total).toBe(6);
     expect(r.data.dados.every((c) => c.usuario_id === U.lucas.id)).toBe(true);
-    expect(r.data.contadores).toEqual({ todos: 6, pendentes: 2, resolvidos: 4, atribuidosAMim: 0, semResponsavel: 1 });
+    expect(r.data.contadores).toEqual({ todos: 6, pendentes: 2, resolvidos: 4, atribuidosAMim: 0, semResponsavel: 1, atrasados: 0 });
   });
 
   it('colaborador continua restrito mesmo filtrando por responsável', async () => {
@@ -36,7 +36,7 @@ describe.each(clientes.map((c) => [c.nome, c]))('Fila de chamados (%s)', (_nome,
   it('equipe vê todos, com contadores das abas', async () => {
     const r = await listar(suporte);
     expect(r.data.total).toBe(17);
-    expect(r.data.contadores).toEqual({ todos: 17, pendentes: 6, resolvidos: 11, atribuidosAMim: 2, semResponsavel: 3 });
+    expect(r.data.contadores).toEqual({ todos: 17, pendentes: 6, resolvidos: 11, atribuidosAMim: 2, semResponsavel: 3, atrasados: 2 });
   });
 
   it('inclui solicitante e responsável sem dados sensíveis', async () => {
@@ -48,12 +48,38 @@ describe.each(clientes.map((c) => [c.nome, c]))('Fila de chamados (%s)', (_nome,
 
   it('ordena por mais recentes por padrão', async () => {
     const r = await listar(suporte, { status: PENDENTES });
-    expect(ids(r)).toEqual([1, 4, 5, 2, 6, 3]);
+    expect(ids(r)).toEqual([5, 1, 4, 2, 6, 3]);
   });
 
   it('ordena por urgência: prioridade e, no empate, o mais antigo primeiro', async () => {
     const r = await listar(suporte, { status: PENDENTES, ordem: 'prioridade' });
     expect(ids(r)).toEqual([5, 3, 1, 6, 2, 4]);
+  });
+
+  it('ordena pelo vencimento do prazo de solução: os mais atrasados primeiro', async () => {
+    const r = await listar(suporte, { status: PENDENTES, ordem: 'prazo' });
+    expect(ids(r)).toEqual([3, 6, 5, 1, 2, 4]);
+  });
+
+  it.each([
+    ['prazo estourado', { sla: 'estourado' }, [6, 3]],
+    ['prazo em risco', { sla: 'em_risco' }, [5]],
+    ['categoria', { categoria: 'rede' }, [2, 6, 9, 13]],
+    ['duas categorias', { categoria: 'acessos,email' }, [7, 11, 14]],
+  ])('filtra por %s', async (_caso, params, esperado) => {
+    expect(ids(await listar(suporte, params))).toEqual(esperado);
+  });
+
+  it('informa a situação dos dois prazos em cada chamado', async () => {
+    const porId = Object.fromEntries((await listar(suporte, { porPagina: 50 })).data.dados.map((c) => [c.id, c.sla]));
+    const situacoes = (id) => [porId[id].resposta.situacao, porId[id].solucao.situacao];
+    expect(situacoes(1)).toEqual(['estourado', 'no_prazo']); // alta, sem resposta há 4,8 h
+    expect(situacoes(3)).toEqual(['cumprido', 'estourado']);
+    expect(situacoes(5)).toEqual(['cumprido', 'em_risco']); // crítica, 78% do prazo
+    expect(situacoes(10)).toEqual(['cumprido', 'violado']); // média resolvida em 30 h
+    expect(situacoes(13)).toEqual(['violado', 'violado']);
+    expect(situacoes(17)).toEqual(['cumprido', 'cumprido']);
+    expect(Date.parse(porId[17].solucao.prazo)).toBeGreaterThan(0);
   });
 
   it.each([

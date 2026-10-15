@@ -5,7 +5,8 @@ import api, { mensagemDeErro } from "../services/api";
 import { codigoChamado } from "../utils/formatar";
 import Modal from "./ui/Modal";
 import Button from "./ui/Button";
-import Campo, { Input, Textarea } from "./ui/Campo";
+import Campo, { Input, Select, Textarea } from "./ui/Campo";
+import { CATEGORIAS, LISTA_CATEGORIAS } from "../config/dominio";
 import { PrioridadeSelo } from "./ui/Selos";
 
 // A prioridade é explicada do ponto de vista de quem pede ajuda
@@ -20,13 +21,14 @@ export default function NovoChamadoModal({ onFechar, onCriado }) {
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [prioridade, setPrioridade] = useState("media");
+  const [categoria, setCategoria] = useState("");
   const [enviando, setEnviando] = useState(false);
 
   async function handleSubmit(event) {
     event.preventDefault();
     setEnviando(true);
     try {
-      const { data } = await api.post("/chamados", { titulo, descricao, prioridade });
+      const { data } = await api.post("/chamados", { titulo, descricao, prioridade, categoria });
       toast.success(`Chamado ${codigoChamado(data.id)} aberto.`);
       onCriado(data);
     } catch (error) {
@@ -53,6 +55,17 @@ export default function NovoChamadoModal({ onFechar, onCriado }) {
               maxLength={255}
               required
             />
+          )}
+        </Campo>
+
+        <Campo rotulo="Categoria" ajuda={CATEGORIAS[categoria]?.exemplo ?? "Ajuda a encaminhar para quem resolve esse tipo de problema."}>
+          {(p) => (
+            <Select {...p} value={categoria} onChange={(e) => setCategoria(e.target.value)} required>
+              <option value="" disabled>Escolha a categoria</option>
+              {LISTA_CATEGORIAS.map((c) => (
+                <option key={c} value={c}>{CATEGORIAS[c].rotulo}</option>
+              ))}
+            </Select>
           )}
         </Campo>
 

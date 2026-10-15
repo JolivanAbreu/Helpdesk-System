@@ -5,7 +5,8 @@ class Interacao extends Model {
   static init(sequelize) {
     super.init({
       mensagem: DataTypes.TEXT,
-      // 'mensagem': escrita por alguém | 'evento': registro automático do sistema
+      // 'mensagem': conversa com o solicitante | 'nota': nota interna, só a equipe vê
+      // 'evento': registro automático do sistema
       tipo: {
         type: DataTypes.STRING,
         defaultValue: 'mensagem',

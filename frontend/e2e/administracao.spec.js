@@ -12,7 +12,11 @@ test.describe("Administração", () => {
     const indicadores = page.getByRole("region", { name: "Indicadores" });
     await expect(indicadores).toContainText("Pendentes");
     await expect(indicadores).toContainText("3 sem responsável");
-    await expect(indicadores).toContainText("11,8 h");
+    await expect(indicadores).toContainText("Tempo médio de 13 h");
+    await expect(indicadores).toContainText("Com prazo estourado");
+    await expect(indicadores).toContainText("82%");
+    await expect(page.getByText("Chamados por categoria")).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "No prazo" })).toBeVisible();
 
     await page.getByRole("button", { name: "Ver tabela" }).click();
     await expect(page.getByRole("columnheader", { name: "Dia" })).toBeVisible();

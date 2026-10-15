@@ -54,9 +54,12 @@ export function Avatar({ nome, tamanho = "md" }) {
   );
 }
 
-export function Contador({ valor, ativo }) {
+export function Contador({ valor, ativo, alerta }) {
+  let cor = "bg-nevoa text-aco";
+  if (alerta) cor = "bg-prioridade-critica text-white";
+  else if (ativo) cor = "bg-azul text-white";
   return (
-    <span className={`num rounded-full px-1.5 text-xs font-medium ${ativo ? "bg-azul text-white" : "bg-nevoa text-aco"}`}>
+    <span className={`num rounded-full px-1.5 text-xs font-medium ${cor}`}>
       {valor}
     </span>
   );

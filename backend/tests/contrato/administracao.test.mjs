@@ -28,22 +28,38 @@ describe.each(clientes.map((c) => [c.nome, c]))('Administração (%s)', (_nome, 
         pendentesPorPrioridade: { critica: 1, alta: 2, media: 2, baixa: 1 },
         semResponsavel: 3,
       });
-      expect(data.resolucao).toEqual({ periodoDias: 30, resolvidos: 11, horasMedias: 11.8 });
+      expect(data.resolucao).toEqual({ periodoDias: 30, resolvidos: 11, horasMedias: 13 });
+      expect(data.sla).toEqual({
+        solucao: { cumpridos: 9, total: 11, percentual: 82 },
+        resposta: { cumpridos: 13, total: 14, percentual: 93 },
+        estourados: 2,
+        emRisco: 1,
+        semResposta: 3,
+      });
+      expect(data.porCategoria).toEqual([
+        { categoria: 'hardware', total: 5, pendentes: 2 },
+        { categoria: 'software', total: 5, pendentes: 2 },
+        { categoria: 'rede', total: 4, pendentes: 2 },
+        { categoria: 'acessos', total: 2, pendentes: 0 },
+        { categoria: 'email', total: 1, pendentes: 0 },
+        { categoria: 'outros', total: 0, pendentes: 0 },
+      ]);
       expect(data.usuarios).toEqual({ ativos: 6, inativos: 1, porPerfil: { comum: 3, suporte: 2, admin: 1 } });
     });
 
     it('mede a carga e as entregas de cada técnico', async () => {
       const { data } = await api.req('GET', '/admin/resumo', { token: admin });
       expect(data.equipe).toEqual([
-        { id: U.carlos.id, nome: 'Carlos Lima', perfil: 'suporte', pendentes: 1, resolvidos: 6, horasMedias: 14.3 },
-        { id: U.rafael.id, nome: 'Rafael Costa', perfil: 'suporte', pendentes: 2, resolvidos: 5, horasMedias: 8.8 },
-        { id: U.admin.id, nome: 'Marina Alves', perfil: 'admin', pendentes: 0, resolvidos: 0, horasMedias: null },
+        { id: U.carlos.id, nome: 'Carlos Lima', perfil: 'suporte', pendentes: 1, resolvidos: 6, horasMedias: 16, noPrazo: 83 },
+        { id: U.rafael.id, nome: 'Rafael Costa', perfil: 'suporte', pendentes: 2, resolvidos: 5, horasMedias: 9.4, noPrazo: 80 },
+        { id: U.admin.id, nome: 'Marina Alves', perfil: 'admin', pendentes: 0, resolvidos: 0, horasMedias: null, noPrazo: null },
       ]);
     });
 
     it('lista os 5 pendentes mais antigos e a série dos últimos 14 dias', async () => {
       const { data } = await api.req('GET', '/admin/resumo', { token: admin });
-      expect(data.pendentesMaisAntigos.map((c) => c.id)).toEqual([3, 6, 2, 5, 4]);
+      expect(data.pendentesMaisAntigos.map((c) => c.id)).toEqual([3, 6, 2, 4, 1]);
+      expect(data.pendentesMaisAntigos[0].sla.solucao.situacao).toBe('estourado');
       expect(data.porDia).toHaveLength(14);
       expect(data.porDia.reduce((s, d) => s + d.abertos, 0)).toBe(17);
       expect(data.porDia.reduce((s, d) => s + d.resolvidos, 0)).toBe(11);

@@ -45,3 +45,25 @@ export function iniciais(nome = "") {
   const ultima = partes.length > 1 ? partes[partes.length - 1][0] : "";
   return (primeira + ultima).toUpperCase();
 }
+
+// 50 min, 3 h, 2 d — duração curta para indicadores de prazo
+export function duracaoCurta(ms) {
+  const minutos = Math.max(1, Math.round(Math.abs(ms) / 60000));
+  if (minutos < 60) return `${minutos} min`;
+  const horas = Math.round(minutos / 60);
+  if (horas < 48) return `${horas} h`;
+  return `${Math.round(horas / 24)} d`;
+}
+
+// Texto do prazo de solução para a fila: "Vence em 3 h", "Atrasado há 2 d", "No prazo"...
+export function textoPrazo(prazoSla, agora = Date.now()) {
+  const restante = new Date(prazoSla.prazo) - agora;
+  switch (prazoSla.situacao) {
+    case "estourado": return `Atrasado há ${duracaoCurta(restante)}`;
+    case "em_risco":
+    case "no_prazo": return `Vence em ${duracaoCurta(restante)}`;
+    case "cumprido": return "Resolvido no prazo";
+    case "violado": return "Resolvido fora do prazo";
+    default: return "";
+  }
+}

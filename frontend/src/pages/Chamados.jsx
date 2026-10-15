@@ -4,14 +4,15 @@ import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Search, Plus, Inbox, ChevronLeft, ChevronRight, SearchX } from "lucide-react";
 import api, { isEquipe, mensagemDeErro } from "../services/api";
-import { PRIORIDADES, LISTA_PRIORIDADES } from "../config/dominio";
-import { codigoChamado, tempoRelativo, dataHora } from "../utils/formatar";
+import { PRIORIDADES, LISTA_PRIORIDADES, CATEGORIAS, LISTA_CATEGORIAS } from "../config/dominio";
+import { codigoChamado, tempoRelativo } from "../utils/formatar";
 import useAtualizacaoPeriodica from "../hooks/useAtualizacaoPeriodica";
 import Cabecalho from "../components/layout/Cabecalho";
 import Button from "../components/ui/Button";
 import { Input, Select } from "../components/ui/Campo";
 import { StatusSelo, PrioridadeSelo, Avatar, Contador } from "../components/ui/Selos";
 import { EsqueletoLinhas, Vazio } from "../components/ui/Estados";
+import { PrazoTexto } from "../components/ui/Prazo";
 
 const PENDENTES = "aberto,em andamento";
 
@@ -20,6 +21,7 @@ const ABAS_EQUIPE = [
   { id: "pendentes", rotulo: "Pendentes", contador: "pendentes", filtros: { status: PENDENTES } },
   { id: "meus", rotulo: "Atribuídos a mim", contador: "atribuidosAMim", filtros: { status: PENDENTES, responsavel: "eu" } },
   { id: "sem-responsavel", rotulo: "Sem responsável", contador: "semResponsavel", filtros: { status: PENDENTES, responsavel: "nenhum" } },
+  { id: "atrasados", rotulo: "Atrasados", contador: "atrasados", filtros: { sla: "estourado" }, alerta: true },
   { id: "resolvidos", rotulo: "Resolvidos", contador: "resolvidos", filtros: { status: "resolvido" } },
   { id: "todos", rotulo: "Todos", contador: "todos", filtros: {} },
 ];
@@ -30,7 +32,8 @@ const ABAS_COLABORADOR = [
 ];
 
 const ORDENS = {
-  prioridade: "Mais urgentes primeiro",
+  prazo: "Prazo mais próximo",
+  prioridade: "Prioridade mais alta",
   recentes: "Mais recentes",
   antigos: "Mais antigos",
   atualizados: "Atualizados recentemente",
@@ -46,7 +49,8 @@ export default function Chamados() {
 
   const aba = abas.find((a) => a.id === params.get("aba")) || abas[0];
   const prioridade = params.get("prioridade") || "";
-  const ordem = params.get("ordem") || (equipe ? "prioridade" : "recentes");
+  const categoria = params.get("categoria") || "";
+  const ordem = params.get("ordem") || (equipe ? "prazo" : "recentes");
   const pagina = Math.max(1, Number(params.get("pagina")) || 1);
   const buscaUrl = params.get("busca") || "";
 
@@ -90,7 +94,7 @@ export default function Chamados() {
     if (!silencioso) setCarregando(true);
     try {
       const { data } = await api.get("/chamados", {
-        params: { ...aba.filtros, prioridade: prioridade || undefined, ordem, pagina, porPagina: POR_PAGINA, busca: buscaUrl || undefined },
+        params: { ...aba.filtros, prioridade: prioridade || undefined, categoria: categoria || undefined, ordem, pagina, porPagina: POR_PAGINA, busca: buscaUrl || undefined },
       });
       setResultado(data);
     } catch (error) {
@@ -98,7 +102,7 @@ export default function Chamados() {
     } finally {
       setCarregando(false);
     }
-  }, [aba, prioridade, ordem, pagina, buscaUrl]);
+  }, [aba, prioridade, categoria, ordem, pagina, buscaUrl]);
 
   useEffect(() => { carregar(); }, [carregar]);
   useAtualizacaoPeriodica(() => carregar({ silencioso: true }), 30000);
@@ -117,7 +121,7 @@ export default function Chamados() {
     }
   }
 
-  const filtrando = Boolean(buscaUrl || prioridade);
+  const filtrando = Boolean(buscaUrl || prioridade || categoria);
   const chamados = resultado?.dados ?? [];
 
   return (
@@ -143,7 +147,13 @@ export default function Chamados() {
                 }`}
               >
                 {a.rotulo}
-                {resultado && <Contador valor={resultado.contadores[a.contador]} ativo={ativa} />}
+                {resultado && (
+                  <Contador
+                    valor={resultado.contadores[a.contador]}
+                    ativo={ativa}
+                    alerta={a.alerta && resultado.contadores[a.contador] > 0}
+                  />
+                )}
               </button>
             );
           })}
@@ -167,6 +177,10 @@ export default function Chamados() {
           <option value="">Todas as prioridades</option>
           {LISTA_PRIORIDADES.map((p) => <option key={p} value={p}>{PRIORIDADES[p].rotulo}</option>)}
         </Select>
+        <Select value={categoria} onChange={(e) => definir({ categoria: e.target.value })} aria-label="Categoria" className="w-auto">
+          <option value="">Todas as categorias</option>
+          {LISTA_CATEGORIAS.map((c) => <option key={c} value={c}>{CATEGORIAS[c].rotulo}</option>)}
+        </Select>
         <Select value={ordem} onChange={(e) => definir({ ordem: e.target.value })} aria-label="Ordenar por" className="w-auto">
           {Object.entries(ORDENS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
         </Select>
@@ -174,12 +188,12 @@ export default function Chamados() {
 
       {/* Lista */}
       <section className="mt-4 overflow-hidden rounded-lg border border-borda bg-white shadow-painel" aria-busy={carregando}>
-        <div className="hidden md:grid grid-cols-[minmax(0,1fr)_110px_130px_170px_110px] gap-4 border-b border-borda bg-nevoa/60 px-5 py-2.5 text-xs font-medium text-aco">
+        <div className="hidden md:grid grid-cols-[minmax(0,1fr)_100px_130px_170px_150px] gap-4 border-b border-borda bg-nevoa/60 px-5 py-2.5 text-xs font-medium text-aco">
           <span>Chamado</span>
           <span>Prioridade</span>
           <span>Status</span>
           <span>Responsável</span>
-          <span className="text-right">Atualizado</span>
+          <span className="text-right">Prazo de solução</span>
         </div>
 
         {carregando && !resultado ? (
@@ -189,13 +203,13 @@ export default function Chamados() {
             <Vazio
               icone={SearchX}
               titulo="Nenhum chamado encontrado"
-              texto="Tente outra busca ou remova o filtro de prioridade."
-              acao={<Button variante="secundario" onClick={() => { setBusca(""); ultimaBuscaEnviada.current = ""; definir({ busca: "", prioridade: "" }); }}>Limpar filtros</Button>}
+              texto="Tente outra busca ou remova os filtros de prioridade e categoria."
+              acao={<Button variante="secundario" onClick={() => { setBusca(""); ultimaBuscaEnviada.current = ""; definir({ busca: "", prioridade: "", categoria: "" }); }}>Limpar filtros</Button>}
             />
           ) : (
             <Vazio
               icone={Inbox}
-              titulo={aba.id === "pendentes" ? "Nada pendente por aqui" : "Nenhum chamado nesta aba"}
+              titulo={aba.id === "atrasados" ? "Nenhum chamado atrasado" : aba.id === "pendentes" ? "Nada pendente por aqui" : "Nenhum chamado nesta aba"}
               texto={equipe ? "Quando alguém abrir um chamado, ele aparece nesta fila." : "Precisa de ajuda com algum equipamento ou sistema? Abra um chamado."}
               acao={!equipe && <Button icone={Plus} onClick={abrirNovoChamado}>Novo chamado</Button>}
             />
@@ -222,13 +236,24 @@ export default function Chamados() {
   );
 }
 
+function Categoria({ valor }) {
+  const info = CATEGORIAS[valor] || CATEGORIAS.outros;
+  const Icone = info.icone;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1">
+      <Icone className="h-3.5 w-3.5" aria-hidden="true" />
+      {info.rotulo}
+    </span>
+  );
+}
+
 function LinhaChamado({ chamado, equipe, assumindo, onAssumir }) {
   const podeAssumir = equipe && !chamado.responsavel && chamado.status !== "resolvido";
   return (
     <li className="group relative flex hover:bg-nevoa/50 transition-colors">
       {/* Faixa de prioridade: o sinal visual principal da fila */}
       <span className={`w-1 shrink-0 ${PRIORIDADES[chamado.prioridade]?.cor}`} aria-hidden="true" />
-      <div className="grid flex-1 grid-cols-1 gap-2 px-4 py-3.5 md:grid-cols-[minmax(0,1fr)_110px_130px_170px_110px] md:items-center md:gap-4 md:px-5">
+      <div className="grid flex-1 grid-cols-1 gap-2 px-4 py-3.5 md:grid-cols-[minmax(0,1fr)_100px_130px_170px_150px] md:items-center md:gap-4 md:px-5">
         <div className="min-w-0">
           <Link
             to={`/chamado/${chamado.id}`}
@@ -237,8 +262,11 @@ function LinhaChamado({ chamado, equipe, assumindo, onAssumir }) {
             <span className="num mr-2 text-xs font-normal text-aco">{codigoChamado(chamado.id)}</span>
             {chamado.titulo}
           </Link>
-          <p className="mt-0.5 truncate text-xs text-aco">
-            {equipe ? `Aberto por ${chamado.usuario?.nome ?? "usuário removido"}` : `Aberto ${tempoRelativo(chamado.createdAt)}`}
+          <p className="mt-1 flex min-w-0 items-center gap-3 text-xs text-aco">
+            <Categoria valor={chamado.categoria} />
+            <span className="truncate">
+              {equipe ? `Aberto por ${chamado.usuario?.nome ?? "usuário removido"}` : `Aberto ${tempoRelativo(chamado.createdAt)}`}
+            </span>
           </p>
         </div>
 
@@ -265,9 +293,9 @@ function LinhaChamado({ chamado, equipe, assumindo, onAssumir }) {
               <span className="text-sm text-aco">{chamado.status === "resolvido" ? "—" : "Aguardando técnico"}</span>
             )}
           </div>
-          <span className="num ml-auto text-xs text-aco md:text-right" title={dataHora(chamado.updatedAt)}>
-            {tempoRelativo(chamado.updatedAt)}
-          </span>
+          <div className="ml-auto md:text-right">
+            <PrazoTexto sla={chamado.sla.solucao} />
+          </div>
         </div>
       </div>
     </li>

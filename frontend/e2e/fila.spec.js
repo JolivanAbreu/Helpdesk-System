@@ -14,9 +14,25 @@ test.describe("Fila de chamados", () => {
     await expect(linhas(page)).toHaveCount(3);
   });
 
-  test("a fila começa pelos mais urgentes", async ({ page }) => {
-    await expect(linhas(page).first()).toContainText("Backup noturno não executado");
-    await expect(linhas(page).first()).toContainText("Crítica");
+  test("a fila começa pelos chamados mais atrasados", async ({ page }) => {
+    await expect(linhas(page).first()).toContainText("Computador reiniciando sozinho");
+    await expect(linhas(page).first()).toContainText(/Atrasado há/);
+    await expect(linhas(page).nth(2)).toContainText("Backup noturno não executado");
+    await expect(linhas(page).nth(2)).toContainText(/Vence em/);
+  });
+
+  test("a aba Atrasados reúne os chamados com prazo estourado", async ({ page }) => {
+    await page.getByRole("navigation", { name: "Filtros rápidos" }).getByRole("button", { name: /Atrasados\s*2/ }).click();
+    await expect(page).toHaveURL(/aba=atrasados/);
+    await expect(linhas(page)).toHaveCount(2);
+    for (const linha of await linhas(page).all()) await expect(linha).toContainText(/Atrasado há/);
+  });
+
+  test("filtra por categoria", async ({ page }) => {
+    await page.getByLabel("Categoria").selectOption("rede");
+    await expect(page).toHaveURL(/categoria=rede/);
+    await expect(linhas(page)).toHaveCount(2);
+    for (const linha of await linhas(page).all()) await expect(linha).toContainText("Rede e internet");
   });
 
   test("assumir pela lista atualiza a aba e o menu lateral", async ({ page }) => {

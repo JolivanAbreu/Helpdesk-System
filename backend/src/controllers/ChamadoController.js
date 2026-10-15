@@ -1,11 +1,14 @@
 // src/controllers/ChamadoController.js
-const { Op, literal } = require('sequelize');
+const { Op, literal, where: condicaoSql } = require('sequelize');
 const Chamado = require('../models/Chamado');
 const Usuario = require('../models/Usuario');
 const Interacao = require('../models/Interacao');
-const { STATUS_CHAMADO, PRIORIDADES, ROTULO_PRIORIDADE, isEquipe } = require('../config/perfis');
+const {
+  STATUS_CHAMADO, PRIORIDADES, ROTULO_PRIORIDADE, CATEGORIAS, isEquipe,
+} = require('../config/perfis');
 const { texto, validarChamado } = require('../utils/validacao');
 const { registrarEvento } = require('../services/eventos');
+const { calcularSla, prazoSolucaoSql } = require('../services/sla');
 
 // Status que o próprio dono (perfil comum) pode definir:
 // encerrar o chamado ou reabri-lo. "em andamento" é só da equipe.
@@ -22,14 +25,28 @@ const ORDENACOES = {
     [literal(`FIELD(\`Chamado\`.\`prioridade\`, ${PRIORIDADES.map((p) => `'${p}'`).join(', ')})`), 'ASC'],
     ['createdAt', 'ASC'],
   ],
+  // Vencimento do prazo de solução: os mais atrasados primeiro
+  prazo: [[prazoSolucaoSql(), 'ASC'], ['createdAt', 'ASC']],
 };
 
 const USUARIO_RESUMIDO = ['id', 'nome', 'email', 'perfil'];
 
+const PENDENTE = { status: { [Op.ne]: 'resolvido' } };
+
+// Condições SQL da situação do prazo de solução (só faz sentido para pendentes)
+const prazoEstourado = (agora) => condicaoSql(prazoSolucaoSql(), Op.lt, agora);
+const prazoEmRisco = (agora) => ({
+  [Op.and]: [condicaoSql(prazoSolucaoSql(0.75), Op.lte, agora), condicaoSql(prazoSolucaoSql(), Op.gte, agora)],
+});
+
+// Chamado no formato da API: dados + situação dos prazos
+const comSla = (chamado) => ({ ...chamado.toJSON(), sla: calcularSla(chamado) });
+
 // Monta o WHERE da listagem a partir da query string.
-// Ex.: /chamados?status=aberto,em andamento&prioridade=alta&responsavel=eu&busca=vpn
-function montarFiltros(query, usuario) {
+// Ex.: /chamados?status=aberto,em andamento&prioridade=alta&categoria=rede&sla=estourado&busca=vpn
+function montarFiltros(query, usuario, agora) {
   const where = {};
+  const e = [];
 
   // Perfil comum só enxerga os próprios chamados, independentemente dos filtros
   if (!isEquipe(usuario)) {
@@ -45,9 +62,15 @@ function montarFiltros(query, usuario) {
   const prioridades = lista(query.prioridade, PRIORIDADES);
   if (prioridades.length) where.prioridade = prioridades;
 
+  const categorias = lista(query.categoria, Object.keys(CATEGORIAS));
+  if (categorias.length) where.categoria = categorias;
+
   if (query.responsavel === 'eu') where.responsavel_id = usuario.id;
   else if (query.responsavel === 'nenhum') where.responsavel_id = null;
   else if (Number(query.responsavel) > 0) where.responsavel_id = Number(query.responsavel);
+
+  if (query.sla === 'estourado') e.push(PENDENTE, prazoEstourado(agora));
+  else if (query.sla === 'em_risco') e.push(PENDENTE, prazoEmRisco(agora));
 
   const busca = texto(query.busca);
   if (busca) {
@@ -59,38 +82,40 @@ function montarFiltros(query, usuario) {
     // "CH-0012", "#12" ou "12" também encontram o chamado pelo número
     const numero = Number(busca.replace(/^(#|ch-?)/i, ''));
     if (Number.isInteger(numero) && numero > 0) condicoes.push({ id: numero });
-    where[Op.or] = condicoes;
+    e.push({ [Op.or]: condicoes });
   }
 
+  if (e.length) where[Op.and] = e;
   return where;
 }
 
 // Contadores das abas rápidas da lista (respeitam só o escopo do perfil)
-async function contarAbas(usuario) {
+async function contarAbas(usuario, agora) {
   const escopo = isEquipe(usuario) ? {} : { usuario_id: usuario.id };
-  const pendente = { status: { [Op.ne]: 'resolvido' } };
 
-  const [todos, pendentes, resolvidos, atribuidosAMim, semResponsavel] = await Promise.all([
+  const [todos, pendentes, resolvidos, atribuidosAMim, semResponsavel, atrasados] = await Promise.all([
     Chamado.count({ where: escopo }),
-    Chamado.count({ where: { ...escopo, ...pendente } }),
+    Chamado.count({ where: { ...escopo, ...PENDENTE } }),
     Chamado.count({ where: { ...escopo, status: 'resolvido' } }),
-    Chamado.count({ where: { ...escopo, ...pendente, responsavel_id: usuario.id } }),
-    Chamado.count({ where: { ...escopo, ...pendente, responsavel_id: null } }),
+    Chamado.count({ where: { ...escopo, ...PENDENTE, responsavel_id: usuario.id } }),
+    Chamado.count({ where: { ...escopo, ...PENDENTE, responsavel_id: null } }),
+    Chamado.count({ where: { ...escopo, [Op.and]: [PENDENTE, prazoEstourado(agora)] } }),
   ]);
 
-  return { todos, pendentes, resolvidos, atribuidosAMim, semResponsavel };
+  return { todos, pendentes, resolvidos, atribuidosAMim, semResponsavel, atrasados };
 }
 
 module.exports = {
   // Lista com filtros, busca, ordenação e paginação
   async index(req, res) {
+    const agora = new Date();
     const pagina = Math.max(1, parseInt(req.query.pagina, 10) || 1);
     const porPagina = Math.min(POR_PAGINA_MAX, Math.max(1, parseInt(req.query.porPagina, 10) || POR_PAGINA_PADRAO));
     const order = ORDENACOES[req.query.ordem] || ORDENACOES.recentes;
 
     const [{ rows, count }, contadores] = await Promise.all([
       Chamado.findAndCountAll({
-        where: montarFiltros(req.query, req.user),
+        where: montarFiltros(req.query, req.user, agora),
         include: [
           { association: 'usuario', attributes: USUARIO_RESUMIDO },
           { association: 'responsavel', attributes: USUARIO_RESUMIDO },
@@ -100,11 +125,11 @@ module.exports = {
         offset: (pagina - 1) * porPagina,
         distinct: true,
       }),
-      contarAbas(req.user),
+      contarAbas(req.user, agora),
     ]);
 
     return res.json({
-      dados: rows,
+      dados: rows.map(comSla),
       total: count,
       pagina,
       porPagina,
@@ -113,7 +138,7 @@ module.exports = {
     });
   },
 
-  // Detalhes do chamado, com timeline (mensagens + eventos) e anexos.
+  // Detalhes do chamado, com timeline (mensagens, notas e eventos) e anexos.
   // O acesso já foi validado pelo middleware chamadoAccess.
   async show(req, res) {
     const chamado = await Chamado.findByPk(req.chamado.id, {
@@ -122,6 +147,9 @@ module.exports = {
         { association: 'responsavel', attributes: USUARIO_RESUMIDO },
         {
           association: 'interacoes',
+          // Notas internas só aparecem para a equipe
+          where: isEquipe(req.user) ? undefined : { tipo: { [Op.ne]: 'nota' } },
+          required: false,
           include: { association: 'usuario', attributes: ['id', 'nome', 'perfil'] },
         },
         { association: 'anexos', attributes: ['id', 'nome_original', 'createdAt'] },
@@ -129,7 +157,7 @@ module.exports = {
       order: [[{ model: Interacao, as: 'interacoes' }, 'createdAt', 'ASC'], [{ model: Interacao, as: 'interacoes' }, 'id', 'ASC']],
     });
 
-    return res.json(chamado);
+    return res.json(comSla(chamado));
   },
 
   async store(req, res) {
@@ -143,15 +171,21 @@ module.exports = {
       return res.status(400).json({ error: `Prioridade inválida. Use: ${PRIORIDADES.join(', ')}.` });
     }
 
+    const categoria = req.body.categoria || 'outros';
+    if (!CATEGORIAS[categoria]) {
+      return res.status(400).json({ error: `Categoria inválida. Use: ${Object.keys(CATEGORIAS).join(', ')}.` });
+    }
+
     const chamado = await Chamado.create({
       titulo: texto(req.body.titulo),
       descricao: texto(req.body.descricao),
       status: 'aberto',
       prioridade,
+      categoria,
       usuario_id: req.userId,
     });
 
-    return res.status(201).json(chamado);
+    return res.status(201).json(comSla(chamado));
   },
 
   // Altera o status. Registra o evento e mantém resolvido_em atualizado.
@@ -168,7 +202,7 @@ module.exports = {
     }
 
     if (status === chamado.status) {
-      return res.json(chamado);
+      return res.json(comSla(chamado));
     }
 
     const anterior = chamado.status;
@@ -183,10 +217,10 @@ module.exports = {
     await registrarEvento(chamado.id, user.id, `alterou o status de "${anterior}" para "${status}"`);
     if (assumiu) await registrarEvento(chamado.id, user.id, 'assumiu o chamado');
 
-    return res.json(chamado);
+    return res.json(comSla(chamado));
   },
 
-  // Altera a prioridade (somente equipe)
+  // Altera a prioridade (somente equipe). Os prazos de SLA passam a seguir a nova prioridade.
   async updatePrioridade(req, res) {
     const { prioridade } = req.body;
     const { chamado, user } = req;
@@ -205,7 +239,29 @@ module.exports = {
       );
     }
 
-    return res.json(chamado);
+    return res.json(comSla(chamado));
+  },
+
+  // Altera a categoria (somente equipe)
+  async updateCategoria(req, res) {
+    const { categoria } = req.body;
+    const { chamado, user } = req;
+
+    if (!CATEGORIAS[categoria]) {
+      return res.status(400).json({ error: `Categoria inválida. Use: ${Object.keys(CATEGORIAS).join(', ')}.` });
+    }
+
+    if (categoria !== chamado.categoria) {
+      const anterior = chamado.categoria;
+      chamado.categoria = categoria;
+      await chamado.save();
+      await registrarEvento(
+        chamado.id, user.id,
+        `alterou a categoria de ${CATEGORIAS[anterior] || anterior} para ${CATEGORIAS[categoria]}`
+      );
+    }
+
+    return res.json(comSla(chamado));
   },
 
   // Define o responsável (somente equipe). responsavel_id: null remove.
@@ -226,7 +282,7 @@ module.exports = {
     }
 
     if (novoId === chamado.responsavel_id) {
-      return res.json(chamado);
+      return res.json(comSla(chamado));
     }
 
     chamado.responsavel_id = novoId;
@@ -238,7 +294,7 @@ module.exports = {
     else mensagem = `atribuiu o chamado a ${responsavel.nome}`;
     await registrarEvento(chamado.id, user.id, mensagem);
 
-    return res.json(chamado);
+    return res.json(comSla(chamado));
   },
 
   // Técnicos ativos que podem receber chamados (para o seletor de responsável)

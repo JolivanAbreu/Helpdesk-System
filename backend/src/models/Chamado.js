@@ -11,7 +11,12 @@ class Chamado extends Model {
         type: DataTypes.STRING,
         defaultValue: 'media',
       },
+      categoria: {
+        type: DataTypes.STRING,
+        defaultValue: 'outros',
+      },
       resolvido_em: DataTypes.DATE,
+      primeira_resposta_em: DataTypes.DATE,
     }, {
       sequelize,
       tableName: 'chamados',

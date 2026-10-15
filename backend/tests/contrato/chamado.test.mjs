@@ -46,15 +46,28 @@ describe.each(clientes.map((c) => [c.nome, c]))('Chamado (%s)', (_nome, api) => 
   });
 
   describe('abertura', () => {
-    it('abre com prioridade média por padrão, em aberto e sem responsável', async () => {
+    it('abre com prioridade média e categoria "outros" por padrão, em aberto e sem responsável', async () => {
       const { status, data } = await api.req('POST', '/chamados', {
         token: juliana, corpo: { titulo: '  Mouse sem fio parou  ', descricao: 'Trocou a pilha e nada.' },
       });
       expect(status).toBe(201);
       expect(data).toMatchObject({
-        id: 18, titulo: 'Mouse sem fio parou', status: 'aberto', prioridade: 'media', usuario_id: U.juliana.id,
+        id: 18, titulo: 'Mouse sem fio parou', status: 'aberto', prioridade: 'media', categoria: 'outros', usuario_id: U.juliana.id,
       });
       expect(data.responsavel_id ?? null).toBeNull();
+      expect(data.sla.resposta.situacao).toBe('no_prazo');
+      expect(data.sla.solucao.situacao).toBe('no_prazo');
+      // média: resposta em 4 h e solução em 24 h a partir da abertura
+      const horas = (prazo) => Math.round((Date.parse(prazo) - Date.parse(data.createdAt)) / 3600000);
+      expect(horas(data.sla.resposta.prazo)).toBe(4);
+      expect(horas(data.sla.solucao.prazo)).toBe(24);
+    });
+
+    it('aceita a categoria escolhida', async () => {
+      const { data } = await api.req('POST', '/chamados', {
+        token: juliana, corpo: { titulo: 'Sem internet', descricao: 'Cabo desconectado?', categoria: 'rede' },
+      });
+      expect(data.categoria).toBe('rede');
     });
 
     it('aceita a prioridade escolhida', async () => {
@@ -69,6 +82,7 @@ describe.each(clientes.map((c) => [c.nome, c]))('Chamado (%s)', (_nome, api) => 
       ['título curto', { titulo: 'ab', descricao: 'x' }],
       ['sem descrição', { titulo: 'Assunto válido', descricao: '   ' }],
       ['prioridade inválida', { titulo: 'Assunto válido', descricao: 'x', prioridade: 'urgente' }],
+      ['categoria inválida', { titulo: 'Assunto válido', descricao: 'x', categoria: 'impressoras' }],
     ])('recusa %s', async (_caso, corpo) => {
       expect((await api.req('POST', '/chamados', { token: juliana, corpo })).status).toBe(400);
     });
@@ -135,8 +149,31 @@ describe.each(clientes.map((c) => [c.nome, c]))('Chamado (%s)', (_nome, api) => 
       expect((await mudar(1, 'critica', lucas)).status).toBe(403);
     });
 
+    it('os prazos de SLA passam a seguir a nova prioridade', async () => {
+      // chamado 4: baixa, aberto há 12 h (prazo de 72 h); como crítica, o prazo seria 4 h
+      expect((await detalhe(4)).sla.solucao.situacao).toBe('no_prazo');
+      const { data } = await mudar(4, 'critica', rafael);
+      expect(data.sla.solucao.situacao).toBe('estourado');
+    });
+
     it('recusa prioridade inválida', async () => {
       expect((await mudar(1, 'urgente', rafael)).status).toBe(400);
+    });
+  });
+
+  describe('categoria', () => {
+    const mudar = (id, categoria, token) => api.req('PUT', `/chamados/${id}/categoria`, { token, corpo: { categoria } });
+
+    it('a equipe recategoriza e o evento usa o nome legível', async () => {
+      const { status, data } = await mudar(1, 'rede', rafael);
+      expect(status).toBe(200);
+      expect(data.categoria).toBe('rede');
+      expect(eventos(await detalhe(1))).toEqual(['Rafael Costa alterou a categoria de Hardware para Rede e internet']);
+    });
+
+    it('o solicitante não altera e categoria inválida é recusada', async () => {
+      expect((await mudar(1, 'rede', lucas)).status).toBe(403);
+      expect((await mudar(1, 'impressoras', rafael)).status).toBe(400);
     });
   });
 
@@ -174,6 +211,31 @@ describe.each(clientes.map((c) => [c.nome, c]))('Chamado (%s)', (_nome, api) => 
     });
   });
 
+  describe('notas internas', () => {
+    const anotar = (id, mensagem, token) => api.req('POST', `/chamados/${id}/interacoes`, { token, corpo: { mensagem, interna: true } });
+
+    it('a equipe registra a nota e só a equipe a vê', async () => {
+      const { status, data } = await anotar(2, 'Certificado do Lucas vence amanhã.', rafael);
+      expect(status).toBe(201);
+      expect(data.tipo).toBe('nota');
+
+      const naEquipe = (await detalhe(2, carlos)).interacoes.filter((i) => i.tipo === 'nota');
+      expect(naEquipe.map((i) => i.mensagem)).toEqual(['Certificado do Lucas vence amanhã.']);
+
+      const doSolicitante = (await detalhe(2, lucas)).interacoes;
+      expect(doSolicitante.some((i) => i.tipo === 'nota')).toBe(false);
+    });
+
+    it('o solicitante não escreve notas internas', async () => {
+      expect((await anotar(1, 'Quero ver isso', lucas)).status).toBe(403);
+    });
+
+    it('nota interna não conta como resposta ao solicitante', async () => {
+      await anotar(1, 'Verificar driver da impressora.', rafael);
+      expect((await detalhe(1)).primeira_resposta_em ?? null).toBeNull();
+    });
+  });
+
   describe('mensagens', () => {
     const enviar = (id, mensagem, token) => api.req('POST', `/chamados/${id}/interacoes`, { token, corpo: { mensagem } });
 
@@ -185,6 +247,24 @@ describe.each(clientes.map((c) => [c.nome, c]))('Chamado (%s)', (_nome, api) => 
 
       const chamado = await detalhe(1);
       expect(chamado.interacoes.map((i) => i.mensagem)).toEqual(['Alguma novidade?', 'Estou a caminho.']);
+    });
+
+    it('a primeira mensagem da equipe registra a resposta para o SLA', async () => {
+      // O próprio solicitante escrevendo não conta como resposta
+      await enviar(1, 'Ainda sem imprimir.', lucas);
+      expect((await detalhe(1)).primeira_resposta_em ?? null).toBeNull();
+
+      await enviar(1, 'Vou verificar.', rafael);
+      const chamado = await detalhe(1);
+      expect(chamado.primeira_resposta_em).toEqual(expect.any(String));
+      // alta: resposta em até 2 h, mas o chamado foi aberto há 4,8 h
+      expect(chamado.sla.resposta.situacao).toBe('violado');
+    });
+
+    it('resposta dentro do prazo fica como cumprida', async () => {
+      const { data: novo } = await api.req('POST', '/chamados', { token: lucas, corpo: { titulo: 'Mouse parou', descricao: 'Não clica.' } });
+      await enviar(novo.id, 'Troque a pilha, por favor.', carlos);
+      expect((await detalhe(novo.id)).sla.resposta.situacao).toBe('cumprido');
     });
 
     it('recusa mensagem vazia e chamado de outra pessoa', async () => {

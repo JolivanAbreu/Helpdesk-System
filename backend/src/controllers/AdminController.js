@@ -2,7 +2,8 @@
 const { fn, col, Op, QueryTypes } = require('sequelize');
 const Chamado = require('../models/Chamado');
 const Usuario = require('../models/Usuario');
-const { STATUS_CHAMADO, PERFIS, PRIORIDADES } = require('../config/perfis');
+const { STATUS_CHAMADO, PERFIS, PRIORIDADES, CATEGORIAS } = require('../config/perfis');
+const { calcularSla, percentual } = require('../services/sla');
 
 const DIAS_GRAFICO = 14;
 const DIAS_METRICAS = 30;
@@ -34,7 +35,7 @@ module.exports = {
 
     const [
       chamadosPorStatus, pendentesPorPrioridade, usuariosPorPerfil, usuariosInativos,
-      maisAntigos, abertosNoPeriodo, resolvidosNoPeriodo, tempoMedio, equipe,
+      maisAntigos, abertosNoPeriodo, resolvidosNoPeriodo, tempoMedio, equipe, recentes,
     ] = await Promise.all([
       Chamado.findAll({
         attributes: ['status', [fn('COUNT', col('id')), 'total']],
@@ -56,7 +57,7 @@ module.exports = {
       Usuario.count({ where: { ativo: false } }),
       Chamado.findAll({
         where: { status: { [Op.ne]: 'resolvido' } },
-        attributes: ['id', 'titulo', 'status', 'prioridade', 'createdAt'],
+        attributes: ['id', 'titulo', 'status', 'prioridade', 'categoria', 'createdAt', 'resolvido_em', 'primeira_resposta_em'],
         include: [
           { association: 'usuario', attributes: ['id', 'nome'] },
           { association: 'responsavel', attributes: ['id', 'nome'] },
@@ -85,7 +86,44 @@ module.exports = {
           ORDER BY resolvidos DESC, u.nome ASC`,
         { replacements: { inicio: inicioMetricas }, type: QueryTypes.SELECT }
       ),
+      // Chamados pendentes ou movimentados nos últimos 30 dias, para o SLA e as categorias
+      Chamado.findAll({
+        where: {
+          [Op.or]: [
+            { status: { [Op.ne]: 'resolvido' } },
+            { resolvido_em: { [Op.gte]: inicioMetricas } },
+            { createdAt: { [Op.gte]: inicioMetricas } },
+          ],
+        },
+        attributes: ['id', 'status', 'prioridade', 'categoria', 'responsavel_id', 'createdAt', 'resolvido_em', 'primeira_resposta_em'],
+      }),
     ]);
+
+    // SLA: entregas dos últimos 30 dias e situação atual da fila
+    const comSla = recentes.map((c) => ({ chamado: c, sla: calcularSla(c, agora) }));
+    const resolvidos30 = comSla.filter(({ chamado }) => chamado.resolvido_em && new Date(chamado.resolvido_em) >= inicioMetricas);
+    const respondidos30 = comSla.filter(({ chamado }) => chamado.primeira_resposta_em && new Date(chamado.primeira_resposta_em) >= inicioMetricas);
+    const pendentesSla = comSla.filter(({ chamado }) => chamado.status !== 'resolvido');
+    const cumpriu = (lista, prazo) => lista.filter(({ sla }) => sla[prazo].situacao === 'cumprido').length;
+    const noPrazoPorTecnico = (id) => {
+      const doTecnico = resolvidos30.filter(({ chamado }) => chamado.responsavel_id === id);
+      return percentual(cumpriu(doTecnico, 'solucao'), doTecnico.length);
+    };
+
+    const sla = {
+      solucao: { cumpridos: cumpriu(resolvidos30, 'solucao'), total: resolvidos30.length, percentual: percentual(cumpriu(resolvidos30, 'solucao'), resolvidos30.length) },
+      resposta: { cumpridos: cumpriu(respondidos30, 'resposta'), total: respondidos30.length, percentual: percentual(cumpriu(respondidos30, 'resposta'), respondidos30.length) },
+      estourados: pendentesSla.filter(({ sla: s }) => s.solucao.situacao === 'estourado').length,
+      emRisco: pendentesSla.filter(({ sla: s }) => s.solucao.situacao === 'em_risco').length,
+      semResposta: pendentesSla.filter(({ sla: s }) => s.resposta.situacao === 'estourado').length,
+    };
+
+    const abertos30 = recentes.filter((c) => new Date(c.createdAt) >= inicioMetricas);
+    const porCategoria = Object.keys(CATEGORIAS).map((categoria) => ({
+      categoria,
+      total: abertos30.filter((c) => c.categoria === categoria).length,
+      pendentes: abertos30.filter((c) => c.categoria === categoria && c.status !== 'resolvido').length,
+    }));
 
     // Série diária (abertos x resolvidos) nos últimos 14 dias, inclusive dias zerados
     const dias = [];
@@ -118,7 +156,9 @@ module.exports = {
         resolvidos: Number(tempoMedio[0].total),
         horasMedias: minutosMedios === null ? null : Math.round((minutosMedios / 60) * 10) / 10,
       },
+      sla,
       porDia: dias,
+      porCategoria,
       equipe: equipe.map((m) => ({
         id: m.id,
         nome: m.nome,
@@ -126,13 +166,14 @@ module.exports = {
         pendentes: Number(m.pendentes || 0),
         resolvidos: Number(m.resolvidos || 0),
         horasMedias: m.minutos_medios === null ? null : Math.round((Number(m.minutos_medios) / 60) * 10) / 10,
+        noPrazo: noPrazoPorTecnico(m.id),
       })),
       usuarios: {
         ativos: Object.values(porPerfil).reduce((soma, n) => soma + n, 0),
         inativos: usuariosInativos,
         porPerfil,
       },
-      pendentesMaisAntigos: maisAntigos,
+      pendentesMaisAntigos: maisAntigos.map((c) => ({ ...c.toJSON(), sla: calcularSla(c, agora) })),
     });
   },
 };

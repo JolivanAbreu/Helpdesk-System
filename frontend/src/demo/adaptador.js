@@ -17,6 +17,25 @@ const EQUIPE = ["suporte", "admin"];
 const TIPOS_ANEXO = ["image/jpeg", "image/pjpeg", "image/png", "image/gif", "application/pdf"];
 const LIMITE_ANEXO_MB = 1; // menor que no servidor real: o localStorage tem pouco espaço
 const DIA = 86400000;
+const HORA = 3600000;
+
+const CATEGORIAS = {
+  hardware: "Hardware",
+  software: "Software e sistemas",
+  rede: "Rede e internet",
+  acessos: "Acessos e senhas",
+  email: "E-mail",
+  outros: "Outros",
+};
+
+// Mesmas metas de backend/src/config/perfis.js (horas corridas)
+const METAS_SLA = {
+  critica: { resposta: 1, solucao: 4 },
+  alta: { resposta: 2, solucao: 8 },
+  media: { resposta: 4, solucao: 24 },
+  baixa: { resposta: 8, solucao: 72 },
+};
+const LIMITE_RISCO_SLA = 0.75;
 
 const agora = () => new Date().toISOString();
 const texto = (v) => (typeof v === "string" ? v.trim() : "");
@@ -63,11 +82,38 @@ function chamadoComAcesso(idTexto, usuario) {
 
 function comPessoas(chamado) {
   return {
-    ...chamado,
+    ...comSla(chamado),
     usuario: publico(usuarioPorId(chamado.usuario_id)) ?? null,
     responsavel: publico(usuarioPorId(chamado.responsavel_id)) ?? null,
   };
 }
+
+/* ------------------------------- SLA ------------------------------- */
+// Mesma regra de backend/src/services/sla.js
+
+const ms = (data) => (data ? new Date(data).getTime() : null);
+
+function situacaoSla(inicio, horas, concluidoEm, momento) {
+  const prazo = inicio + horas * HORA;
+  if (concluidoEm) return concluidoEm <= prazo ? "cumprido" : "violado";
+  if (momento > prazo) return "estourado";
+  if (momento - inicio >= horas * HORA * LIMITE_RISCO_SLA) return "em_risco";
+  return "no_prazo";
+}
+
+function calcularSla(chamado, momento = Date.now()) {
+  const meta = METAS_SLA[chamado.prioridade] || METAS_SLA.media;
+  const inicio = ms(chamado.createdAt);
+  const prazo = (horas) => new Date(inicio + horas * HORA).toISOString();
+  return {
+    resposta: { prazo: prazo(meta.resposta), situacao: situacaoSla(inicio, meta.resposta, ms(chamado.primeira_resposta_em), momento) },
+    solucao: { prazo: prazo(meta.solucao), situacao: situacaoSla(inicio, meta.solucao, ms(chamado.resolvido_em), momento) },
+  };
+}
+
+const prazoSolucaoMs = (c) => ms(c.createdAt) + (METAS_SLA[c.prioridade] || METAS_SLA.media).solucao * HORA;
+const comSla = (chamado) => ({ ...chamado, sla: calcularSla(chamado) });
+const percentual = (parte, total) => (total ? Math.round((parte / total) * 100) : null);
 
 function registrarEvento(chamado, autor, mensagem) {
   const quando = agora();
@@ -130,12 +176,19 @@ const rotas = [
 
     const status = lista(params.status, STATUS);
     const prioridades = lista(params.prioridade, PRIORIDADES);
+    const categorias = lista(params.categoria, Object.keys(CATEGORIAS));
+    const momento = Date.now();
+    const pendente = (c) => c.status !== "resolvido";
+    const situacaoSolucao = (c) => calcularSla(c, momento).solucao.situacao;
     const busca = normalizar(texto(params.busca));
     const numero = Number(busca.replace(/^(#|ch-?)/i, ""));
 
     let filtrados = escopo.filter((c) => {
       if (status.length && !status.includes(c.status)) return false;
       if (prioridades.length && !prioridades.includes(c.prioridade)) return false;
+      if (categorias.length && !categorias.includes(c.categoria)) return false;
+      if (params.sla === "estourado" && !(pendente(c) && situacaoSolucao(c) === "estourado")) return false;
+      if (params.sla === "em_risco" && !(pendente(c) && situacaoSolucao(c) === "em_risco")) return false;
       if (params.responsavel === "eu" && c.responsavel_id !== eu.id) return false;
       if (params.responsavel === "nenhum" && c.responsavel_id !== null) return false;
       if (Number(params.responsavel) > 0 && c.responsavel_id !== Number(params.responsavel)) return false;
@@ -153,12 +206,12 @@ const rotas = [
       antigos: porData("createdAt", 1),
       atualizados: porData("updatedAt", -1),
       prioridade: (a, b) => PRIORIDADES.indexOf(a.prioridade) - PRIORIDADES.indexOf(b.prioridade) || porData("createdAt", 1)(a, b),
+      prazo: (a, b) => prazoSolucaoMs(a) - prazoSolucaoMs(b) || porData("createdAt", 1)(a, b),
     };
     filtrados = [...filtrados].sort(ordens[params.ordem] || ordens.recentes);
 
     const porPagina = Math.min(50, Math.max(1, parseInt(params.porPagina, 10) || 15));
     const pagina = Math.max(1, parseInt(params.pagina, 10) || 1);
-    const pendente = (c) => c.status !== "resolvido";
 
     return [200, {
       dados: filtrados.slice((pagina - 1) * porPagina, pagina * porPagina).map(comPessoas),
@@ -172,6 +225,7 @@ const rotas = [
         resolvidos: escopo.filter((c) => c.status === "resolvido").length,
         atribuidosAMim: escopo.filter((c) => pendente(c) && c.responsavel_id === eu.id).length,
         semResponsavel: escopo.filter((c) => pendente(c) && c.responsavel_id === null).length,
+        atrasados: escopo.filter((c) => pendente(c) && situacaoSolucao(c) === "estourado").length,
       },
     }];
   }],
@@ -184,20 +238,23 @@ const rotas = [
     if (!descricao) falhar(400, "Descreva o problema.");
     const prioridade = corpo.prioridade || "media";
     if (!PRIORIDADES.includes(prioridade)) falhar(400, `Prioridade inválida. Use: ${PRIORIDADES.join(", ")}.`);
+    const categoria = corpo.categoria || "outros";
+    if (!CATEGORIAS[categoria]) falhar(400, `Categoria inválida. Use: ${Object.keys(CATEGORIAS).join(", ")}.`);
     const quando = agora();
     const chamado = {
-      id: proximoId("chamados"), titulo, descricao, status: "aberto", prioridade,
-      usuario_id: eu.id, responsavel_id: null, resolvido_em: null, createdAt: quando, updatedAt: quando,
+      id: proximoId("chamados"), titulo, descricao, status: "aberto", prioridade, categoria,
+      usuario_id: eu.id, responsavel_id: null, resolvido_em: null, primeira_resposta_em: null,
+      createdAt: quando, updatedAt: quando,
     };
     banco().chamados.push(chamado);
-    return [201, chamado];
+    return [201, comSla(chamado)];
   }],
 
   ["GET", /^\/chamados\/([^/]+)$/, ({ eu, m }) => {
     const chamado = chamadoComAcesso(m[1], eu);
     const db = banco();
     const interacoes = db.interacoes
-      .filter((i) => i.chamado_id === chamado.id)
+      .filter((i) => i.chamado_id === chamado.id && (i.tipo !== "nota" || isEquipe(eu)))
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a.id - b.id)
       .map((i) => {
         const autor = usuarioPorId(i.usuario_id);
@@ -216,7 +273,7 @@ const rotas = [
     if (!isEquipe(eu) && !["aberto", "resolvido"].includes(status)) {
       falhar(403, "Apenas a equipe de suporte pode colocar o chamado em andamento.");
     }
-    if (status === chamado.status) return [200, chamado];
+    if (status === chamado.status) return [200, comSla(chamado)];
     const anterior = chamado.status;
     chamado.status = status;
     chamado.resolvido_em = status === "resolvido" ? agora() : null;
@@ -225,7 +282,7 @@ const rotas = [
     tocar(chamado);
     registrarEvento(chamado, eu, `alterou o status de "${anterior}" para "${status}"`);
     if (assumiu) registrarEvento(chamado, eu, "assumiu o chamado");
-    return [200, chamado];
+    return [200, comSla(chamado)];
   }],
 
   ["PUT", /^\/chamados\/([^/]+)\/prioridade$/, ({ eu, m, corpo }) => {
@@ -239,7 +296,21 @@ const rotas = [
       tocar(chamado);
       registrarEvento(chamado, eu, `alterou a prioridade de ${ROTULO_PRIORIDADE[anterior]} para ${ROTULO_PRIORIDADE[prioridade]}`);
     }
-    return [200, chamado];
+    return [200, comSla(chamado)];
+  }],
+
+  ["PUT", /^\/chamados\/([^/]+)\/categoria$/, ({ eu, m, corpo }) => {
+    exigirPerfil(eu, "suporte", "admin");
+    const chamado = chamadoComAcesso(m[1], eu);
+    const { categoria } = corpo;
+    if (!CATEGORIAS[categoria]) falhar(400, `Categoria inválida. Use: ${Object.keys(CATEGORIAS).join(", ")}.`);
+    if (categoria !== chamado.categoria) {
+      const anterior = chamado.categoria;
+      chamado.categoria = categoria;
+      tocar(chamado);
+      registrarEvento(chamado, eu, `alterou a categoria de ${CATEGORIAS[anterior] || anterior} para ${CATEGORIAS[categoria]}`);
+    }
+    return [200, comSla(chamado)];
   }],
 
   ["PUT", /^\/chamados\/([^/]+)\/responsavel$/, ({ eu, m, corpo }) => {
@@ -256,25 +327,31 @@ const rotas = [
         falhar(400, "O responsável precisa ser um usuário ativo da equipe (suporte ou admin).");
       }
     }
-    if (novoId === chamado.responsavel_id) return [200, chamado];
+    if (novoId === chamado.responsavel_id) return [200, comSla(chamado)];
     chamado.responsavel_id = novoId;
     tocar(chamado);
     let mensagem = "removeu o responsável do chamado";
     if (responsavel) mensagem = responsavel.id === eu.id ? "assumiu o chamado" : `atribuiu o chamado a ${responsavel.nome}`;
     registrarEvento(chamado, eu, mensagem);
-    return [200, chamado];
+    return [200, comSla(chamado)];
   }],
 
   ["POST", /^\/chamados\/([^/]+)\/interacoes$/, ({ eu, m, corpo }) => {
     const chamado = chamadoComAcesso(m[1], eu);
     const mensagem = texto(corpo.mensagem);
     if (!mensagem) falhar(400, "A mensagem não pode ficar vazia.");
+    const interna = corpo.interna === true;
+    if (interna && !isEquipe(eu)) falhar(403, "Apenas a equipe de suporte pode escrever notas internas.");
     const quando = agora();
     const interacao = {
       id: proximoId("interacoes"), chamado_id: chamado.id, usuario_id: eu.id,
-      mensagem, tipo: "mensagem", createdAt: quando, updatedAt: quando,
+      mensagem, tipo: interna ? "nota" : "mensagem", createdAt: quando, updatedAt: quando,
     };
     banco().interacoes.push(interacao);
+    // A primeira mensagem da equipe ao solicitante conta para o SLA de resposta (notas não contam)
+    if (!interna && isEquipe(eu) && eu.id !== chamado.usuario_id && !chamado.primeira_resposta_em) {
+      chamado.primeira_resposta_em = quando;
+    }
     return [201, interacao];
   }],
 
@@ -398,6 +475,12 @@ function resumoAdmin(fuso) {
   const ativos = usuarios.filter((u) => u.ativo);
   const porPerfil = contar(ativos, "perfil", PERFIS);
 
+  // SLA: entregas dos últimos 30 dias e situação atual da fila
+  const sla = (c) => calcularSla(c, agoraMs);
+  const respondidos30 = chamados.filter((c) => c.primeira_resposta_em && new Date(c.primeira_resposta_em) >= desde(30));
+  const cumpriu = (lista, prazo) => lista.filter((c) => sla(c)[prazo].situacao === "cumprido").length;
+  const abertos30 = chamados.filter((c) => new Date(c.createdAt) >= desde(30));
+
   return {
     chamados: {
       total: chamados.length,
@@ -406,7 +489,19 @@ function resumoAdmin(fuso) {
       semResponsavel: pendentes.filter((c) => c.responsavel_id === null).length,
     },
     resolucao: { periodoDias: 30, resolvidos: resolvidos30.length, horasMedias: media(resolvidos30) },
+    sla: {
+      solucao: { cumpridos: cumpriu(resolvidos30, "solucao"), total: resolvidos30.length, percentual: percentual(cumpriu(resolvidos30, "solucao"), resolvidos30.length) },
+      resposta: { cumpridos: cumpriu(respondidos30, "resposta"), total: respondidos30.length, percentual: percentual(cumpriu(respondidos30, "resposta"), respondidos30.length) },
+      estourados: pendentes.filter((c) => sla(c).solucao.situacao === "estourado").length,
+      emRisco: pendentes.filter((c) => sla(c).solucao.situacao === "em_risco").length,
+      semResposta: pendentes.filter((c) => sla(c).resposta.situacao === "estourado").length,
+    },
     porDia,
+    porCategoria: Object.keys(CATEGORIAS).map((categoria) => ({
+      categoria,
+      total: abertos30.filter((c) => c.categoria === categoria).length,
+      pendentes: abertos30.filter((c) => c.categoria === categoria && c.status !== "resolvido").length,
+    })),
     equipe: ativos
       .filter(isEquipe)
       .map((u) => {
@@ -416,6 +511,7 @@ function resumoAdmin(fuso) {
           pendentes: pendentes.filter((c) => c.responsavel_id === u.id).length,
           resolvidos: resolvidos.length,
           horasMedias: media(resolvidos),
+          noPrazo: percentual(cumpriu(resolvidos, "solucao"), resolvidos.length),
         };
       })
       .sort((a, b) => b.resolvidos - a.resolvidos || a.nome.localeCompare(b.nome)),
