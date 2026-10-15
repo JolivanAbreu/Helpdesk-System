@@ -1,6 +1,7 @@
 // Indicadores e gestão de usuários (somente administrador)
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { criarClientes, USUARIOS as U } from '../apoio/clientes.mjs';
+import { CAT, GRUPO } from '../apoio/catalogo.mjs';
 
 const clientes = await criarClientes();
 afterAll(() => Promise.all(clientes.map((c) => c.encerrar())));
@@ -36,13 +37,20 @@ describe.each(clientes.map((c) => [c.nome, c]))('Administração (%s)', (_nome, 
         emRisco: 1,
         semResposta: 3,
       });
+      // Por categoria principal (somando as subcategorias), em ordem alfabética
       expect(data.porCategoria).toEqual([
-        { categoria: 'hardware', total: 5, pendentes: 2 },
-        { categoria: 'software', total: 5, pendentes: 2 },
-        { categoria: 'rede', total: 4, pendentes: 2 },
-        { categoria: 'acessos', total: 2, pendentes: 0 },
-        { categoria: 'email', total: 1, pendentes: 0 },
-        { categoria: 'outros', total: 0, pendentes: 0 },
+        { id: CAT.acessos, nome: 'Acessos e senhas', icone: 'acessos', total: 2, pendentes: 0 },
+        { id: CAT.email, nome: 'E-mail', icone: 'email', total: 1, pendentes: 0 },
+        { id: CAT.hardware, nome: 'Hardware', icone: 'hardware', total: 5, pendentes: 2 },
+        { id: CAT.outros, nome: 'Outros', icone: 'outros', total: 0, pendentes: 0 },
+        { id: CAT.rede, nome: 'Rede e internet', icone: 'rede', total: 4, pendentes: 2 },
+        { id: CAT.software, nome: 'Software e sistemas', icone: 'software', total: 5, pendentes: 2 },
+      ]);
+      // Fila atual de cada grupo técnico
+      expect(data.porGrupo).toEqual([
+        { id: GRUPO.n1, nome: 'Service Desk (N1)', pendentes: 3, semResponsavel: 2, estourados: 1 },
+        { id: GRUPO.infra, nome: 'Infraestrutura (N2)', pendentes: 3, semResponsavel: 1, estourados: 1 },
+        { id: GRUPO.sistemas, nome: 'Sistemas (N2)', pendentes: 0, semResponsavel: 0, estourados: 0 },
       ]);
       expect(data.usuarios).toEqual({ ativos: 6, inativos: 1, porPerfil: { comum: 3, suporte: 2, admin: 1 } });
     });

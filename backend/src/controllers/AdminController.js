@@ -2,7 +2,9 @@
 const { fn, col, Op, QueryTypes } = require('sequelize');
 const Chamado = require('../models/Chamado');
 const Usuario = require('../models/Usuario');
-const { STATUS_CHAMADO, PERFIS, PRIORIDADES, CATEGORIAS } = require('../config/perfis');
+const Categoria = require('../models/Categoria');
+const Grupo = require('../models/Grupo');
+const { STATUS_CHAMADO, PERFIS, PRIORIDADES } = require('../config/perfis');
 const { calcularSla, percentual } = require('../services/sla');
 
 const DIAS_GRAFICO = 14;
@@ -36,6 +38,7 @@ module.exports = {
     const [
       chamadosPorStatus, pendentesPorPrioridade, usuariosPorPerfil, usuariosInativos,
       maisAntigos, abertosNoPeriodo, resolvidosNoPeriodo, tempoMedio, equipe, recentes,
+      categoriasPrincipais, grupos,
     ] = await Promise.all([
       Chamado.findAll({
         attributes: ['status', [fn('COUNT', col('id')), 'total']],
@@ -57,10 +60,11 @@ module.exports = {
       Usuario.count({ where: { ativo: false } }),
       Chamado.findAll({
         where: { status: { [Op.ne]: 'resolvido' } },
-        attributes: ['id', 'titulo', 'status', 'prioridade', 'categoria', 'createdAt', 'resolvido_em', 'primeira_resposta_em'],
+        attributes: ['id', 'titulo', 'status', 'prioridade', 'createdAt', 'resolvido_em', 'primeira_resposta_em', 'prazo_resposta', 'prazo_solucao'],
         include: [
           { association: 'usuario', attributes: ['id', 'nome'] },
           { association: 'responsavel', attributes: ['id', 'nome'] },
+          { association: 'grupo', attributes: ['id', 'nome'] },
         ],
         order: [['createdAt', 'ASC']],
         limit: 5,
@@ -95,8 +99,15 @@ module.exports = {
             { createdAt: { [Op.gte]: inicioMetricas } },
           ],
         },
-        attributes: ['id', 'status', 'prioridade', 'categoria', 'responsavel_id', 'createdAt', 'resolvido_em', 'primeira_resposta_em'],
+        attributes: ['id', 'status', 'prioridade', 'categoria_id', 'grupo_id', 'responsavel_id', 'createdAt', 'resolvido_em', 'primeira_resposta_em', 'prazo_resposta', 'prazo_solucao'],
       }),
+      Categoria.findAll({
+        where: { parent_id: null },
+        attributes: ['id', 'nome', 'icone'],
+        include: { association: 'subcategorias', attributes: ['id'] },
+        order: [['nome', 'ASC']],
+      }),
+      Grupo.findAll({ where: { ativo: true }, attributes: ['id', 'nome'], order: [['id', 'ASC']] }),
     ]);
 
     // SLA: entregas dos últimos 30 dias e situação atual da fila
@@ -119,11 +130,30 @@ module.exports = {
     };
 
     const abertos30 = recentes.filter((c) => new Date(c.createdAt) >= inicioMetricas);
-    const porCategoria = Object.keys(CATEGORIAS).map((categoria) => ({
-      categoria,
-      total: abertos30.filter((c) => c.categoria === categoria).length,
-      pendentes: abertos30.filter((c) => c.categoria === categoria && c.status !== 'resolvido').length,
-    }));
+    // Chamados abertos nos últimos 30 dias por categoria principal
+    const porCategoria = categoriasPrincipais.map((categoria) => {
+      const subs = new Set(categoria.subcategorias.map((s) => s.id));
+      const daCategoria = abertos30.filter((c) => subs.has(c.categoria_id));
+      return {
+        id: categoria.id,
+        nome: categoria.nome,
+        icone: categoria.icone,
+        total: daCategoria.length,
+        pendentes: daCategoria.filter((c) => c.status !== 'resolvido').length,
+      };
+    });
+
+    // Fila atual de cada grupo técnico
+    const porGrupo = grupos.map((grupo) => {
+      const fila = pendentesSla.filter(({ chamado }) => chamado.grupo_id === grupo.id);
+      return {
+        id: grupo.id,
+        nome: grupo.nome,
+        pendentes: fila.length,
+        semResponsavel: fila.filter(({ chamado }) => !chamado.responsavel_id).length,
+        estourados: fila.filter(({ sla: s }) => s.solucao.situacao === 'estourado').length,
+      };
+    });
 
     // Série diária (abertos x resolvidos) nos últimos 14 dias, inclusive dias zerados
     const dias = [];
@@ -159,6 +189,7 @@ module.exports = {
       sla,
       porDia: dias,
       porCategoria,
+      porGrupo,
       equipe: equipe.map((m) => ({
         id: m.id,
         nome: m.nome,

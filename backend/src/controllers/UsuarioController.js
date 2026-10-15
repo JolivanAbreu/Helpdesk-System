@@ -2,7 +2,7 @@
 const bcrypt = require('bcryptjs');
 const { literal } = require('sequelize');
 const Usuario = require('../models/Usuario');
-const { PERFIS } = require('../config/perfis');
+const { PERFIS, isEquipe } = require('../config/perfis');
 const { texto, validarCadastro } = require('../utils/validacao');
 
 // Campos devolvidos ao frontend (nunca o hash da senha)
@@ -71,6 +71,8 @@ module.exports = {
 
     usuario.perfil = perfil;
     await usuario.save();
+    // Quem deixa a equipe sai também dos grupos técnicos
+    if (!isEquipe(usuario)) await usuario.setGrupos([]);
 
     return res.json(usuarioPublico(usuario));
   },

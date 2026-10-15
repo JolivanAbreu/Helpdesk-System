@@ -1,6 +1,7 @@
 // Listagem de chamados: escopo por perfil, filtros, busca, ordem e paginação
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { criarClientes, USUARIOS as U } from '../apoio/clientes.mjs';
+import { CAT, GRUPO, SUB } from '../apoio/catalogo.mjs';
 
 const clientes = await criarClientes();
 afterAll(() => Promise.all(clientes.map((c) => c.encerrar())));
@@ -25,7 +26,7 @@ describe.each(clientes.map((c) => [c.nome, c]))('Fila de chamados (%s)', (_nome,
     expect(r.status).toBe(200);
     expect(r.data.total).toBe(6);
     expect(r.data.dados.every((c) => c.usuario_id === U.lucas.id)).toBe(true);
-    expect(r.data.contadores).toEqual({ todos: 6, pendentes: 2, resolvidos: 4, atribuidosAMim: 0, semResponsavel: 1, atrasados: 0 });
+    expect(r.data.contadores).toEqual({ todos: 6, pendentes: 2, resolvidos: 4, atribuidosAMim: 0, semResponsavel: 1, atrasados: 0, doMeuGrupo: 0 });
   });
 
   it('colaborador continua restrito mesmo filtrando por responsável', async () => {
@@ -36,14 +37,27 @@ describe.each(clientes.map((c) => [c.nome, c]))('Fila de chamados (%s)', (_nome,
   it('equipe vê todos, com contadores das abas', async () => {
     const r = await listar(suporte);
     expect(r.data.total).toBe(17);
-    expect(r.data.contadores).toEqual({ todos: 17, pendentes: 6, resolvidos: 11, atribuidosAMim: 2, semResponsavel: 3, atrasados: 2 });
+    expect(r.data.contadores).toEqual({ todos: 17, pendentes: 6, resolvidos: 11, atribuidosAMim: 2, semResponsavel: 3, atrasados: 2, doMeuGrupo: 6 });
   });
 
-  it('inclui solicitante e responsável sem dados sensíveis', async () => {
+  it('o contador "do meu grupo" segue os grupos de cada técnico', async () => {
+    // Carlos: Service Desk (N1) e Sistemas (N2), que têm 3 pendentes no N1
+    const carlos = await api.entrar(U.carlos.email);
+    expect((await listar(carlos)).data.contadores.doMeuGrupo).toBe(3);
+    // Marina (admin) não participa de nenhum grupo
+    const marina = await api.entrar(U.admin.email);
+    expect((await listar(marina)).data.contadores.doMeuGrupo).toBe(0);
+  });
+
+  it('inclui solicitante, responsável, grupo e categoria, sem dados sensíveis', async () => {
     const r = await listar(suporte, { busca: 'VPN' });
     const [chamado] = r.data.dados;
     expect(chamado.usuario).toEqual({ id: U.lucas.id, nome: U.lucas.nome, email: U.lucas.email, perfil: 'comum' });
     expect(chamado.responsavel).toMatchObject({ id: U.rafael.id, nome: U.rafael.nome });
+    expect(chamado.grupo).toEqual({ id: GRUPO.infra, nome: 'Infraestrutura (N2)' });
+    expect(chamado.categoria).toEqual({
+      id: SUB.vpn, nome: 'VPN', parent_id: CAT.rede, pai: { id: CAT.rede, nome: 'Rede e internet', icone: 'rede' },
+    });
   });
 
   it('ordena por mais recentes por padrão', async () => {
@@ -64,8 +78,13 @@ describe.each(clientes.map((c) => [c.nome, c]))('Fila de chamados (%s)', (_nome,
   it.each([
     ['prazo estourado', { sla: 'estourado' }, [6, 3]],
     ['prazo em risco', { sla: 'em_risco' }, [5]],
-    ['categoria', { categoria: 'rede' }, [2, 6, 9, 13]],
-    ['duas categorias', { categoria: 'acessos,email' }, [7, 11, 14]],
+    ['categoria principal (inclui as subcategorias)', { categoria: String(CAT.rede) }, [2, 6, 9, 13]],
+    ['duas categorias', { categoria: `${CAT.acessos},${CAT.email}` }, [7, 11, 14]],
+    ['subcategoria', { categoria: String(SUB.perifericos) }, [12, 16]],
+    ['categoria e subcategoria juntas', { categoria: `${CAT.email},${SUB.licencas}` }, [7, 17]],
+    ['grupo', { grupo: String(GRUPO.sistemas) }, [8]],
+    ['grupo, só pendentes', { grupo: String(GRUPO.infra), status: PENDENTES }, [5, 2, 6]],
+    ['meus grupos', { grupo: 'meus', status: PENDENTES }, [5, 1, 4, 2, 6, 3]],
   ])('filtra por %s', async (_caso, params, esperado) => {
     expect(ids(await listar(suporte, params))).toEqual(esperado);
   });
@@ -88,7 +107,8 @@ describe.each(clientes.map((c) => [c.nome, c]))('Fila de chamados (%s)', (_nome,
     ['atribuídos a mim', { status: PENDENTES, responsavel: 'eu' }, 2],
     ['sem responsável', { status: PENDENTES, responsavel: 'nenhum' }, 3],
     ['responsável por ID', { responsavel: String(U.carlos.id) }, 7],
-    ['valores inválidos são ignorados', { status: 'xyz', prioridade: 'foo' }, 17],
+    ['valores inválidos são ignorados', { status: 'xyz', prioridade: 'foo', categoria: 'rede', grupo: 'abc' }, 17],
+    ['sem grupo', { grupo: 'nenhum' }, 0],
   ])('filtra por %s', async (_caso, params, total) => {
     expect((await listar(suporte, params)).data.total).toBe(total);
   });

@@ -21,6 +21,9 @@ class Usuario extends Model {
 
   static associate(models) {
     this.hasMany(models.Chamado, { foreignKey: 'usuario_id', as: 'chamados' });
+    this.belongsToMany(models.Grupo, {
+      through: 'usuarios_grupos', foreignKey: 'usuario_id', otherKey: 'grupo_id', as: { singular: 'grupo', plural: 'grupos' },
+    });
   }
 
   checkPassword(senha) {

@@ -19,16 +19,24 @@ function criarClienteReal() {
   const conexao = require('../../src/database');
   const Sequelize = require('sequelize');
   const seeder = require('../../src/database/seeders/20251005220000-demo-data');
+  const { inserirCatalogoPadrao } = require('../../src/database/catalogoPadrao');
 
   return {
     nome: 'API real',
 
-    // Volta o banco de teste ao estado dos dados de exemplo, com os IDs desde 1
+    // Volta o banco de teste ao estado inicial (catálogo de fábrica e dados
+    // de exemplo), com os IDs desde 1
     async reiniciar() {
-      for (const tabela of ['anexos', 'interacoes', 'chamados', 'usuarios']) {
+      for (const tabela of ['anexos', 'interacoes', 'chamados', 'usuarios_grupos', 'usuarios']) {
         await conexao.query(`DELETE FROM ${tabela}`);
+      }
+      await conexao.query('DELETE FROM categorias WHERE parent_id IS NOT NULL');
+      await conexao.query('DELETE FROM categorias');
+      await conexao.query('DELETE FROM grupos');
+      for (const tabela of ['anexos', 'interacoes', 'chamados', 'usuarios', 'categorias', 'grupos']) {
         await conexao.query(`ALTER TABLE ${tabela} AUTO_INCREMENT = 1`);
       }
+      await inserirCatalogoPadrao(conexao.getQueryInterface());
       await seeder.up(conexao.getQueryInterface(), Sequelize);
     },
 

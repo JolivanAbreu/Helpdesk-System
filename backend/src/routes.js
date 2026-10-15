@@ -10,6 +10,8 @@ const InteracaoController = require('./controllers/InteracaoController');
 const AnexoController = require('./controllers/AnexoController');
 const UsuarioController = require('./controllers/UsuarioController');
 const AdminController = require('./controllers/AdminController');
+const CategoriaController = require('./controllers/CategoriaController');
+const GrupoController = require('./controllers/GrupoController');
 
 const auth = require('./middleware/auth');
 const permission = require('./middleware/permission');
@@ -45,6 +47,17 @@ routes.put('/chamados/:chamado_id/status', chamadoAccess, ChamadoController.upda
 routes.put('/chamados/:chamado_id/prioridade', permission('suporte', 'admin'), chamadoAccess, ChamadoController.updatePrioridade);
 routes.put('/chamados/:chamado_id/responsavel', permission('suporte', 'admin'), chamadoAccess, ChamadoController.updateResponsavel);
 routes.put('/chamados/:chamado_id/categoria', permission('suporte', 'admin'), chamadoAccess, ChamadoController.updateCategoria);
+routes.put('/chamados/:chamado_id/transferencia', permission('suporte', 'admin'), chamadoAccess, ChamadoController.transferir);
+
+// Catálogo de categorias (leitura para todos; edição só admin)
+routes.get('/categorias', CategoriaController.index);
+routes.post('/categorias', permission('admin'), CategoriaController.store);
+routes.put('/categorias/:categoria_id', permission('admin'), CategoriaController.update);
+
+// Grupos técnicos
+routes.get('/grupos', permission('suporte', 'admin'), GrupoController.index);
+routes.post('/grupos', permission('admin'), GrupoController.store);
+routes.put('/grupos/:grupo_id', permission('admin'), GrupoController.update);
 
 // Técnicos que podem receber chamados (seletor de responsável)
 routes.get('/equipe', permission('suporte', 'admin'), ChamadoController.equipe);

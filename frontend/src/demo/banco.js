@@ -3,8 +3,10 @@
 // quem está visitando. Cada visitante tem a sua própria cópia, então nada
 // do que um faz aparece para outro.
 
+import { catalogoInicial } from "./catalogo";
+
 // Mudar a versão descarta dados antigos salvos no navegador de quem já visitou
-const CHAVE = "@NexoDesk:demo:v2";
+const CHAVE = "@NexoDesk:demo:v3";
 const HORA = 60 * 60 * 1000;
 
 let cache = null;
@@ -59,38 +61,51 @@ const USUARIOS = [
   { chave: "ana", nome: "Ana Souza", email: "ana@helpdesk.com", perfil: "comum", ativo: false },
 ];
 
+// Membros dos grupos técnicos (iguais ao seeder)
+const MEMBROS_GRUPOS = {
+  "Service Desk (N1)": ["rafael", "carlos"],
+  "Infraestrutura (N2)": ["rafael"],
+  "Sistemas (N2)": ["carlos"],
+};
+
 const CHAMADOS = [
-  { titulo: 'Impressora do 2º andar não imprime', descricao: 'A impressora HP do 2º andar aparece como offline para todos do setor financeiro desde hoje cedo.', de: 'lucas', prioridade: 'alta', categoria: 'hardware', status: 'aberto', dias: 0.2 },
-  { titulo: 'Sem acesso à VPN', descricao: 'Ao conectar na VPN de casa, recebo a mensagem "falha na autenticação". A senha de rede está correta.', de: 'lucas', prioridade: 'media', categoria: 'rede', status: 'em andamento', resp: 'rafael', dias: 0.7,
+  { titulo: 'Impressora do 2º andar não imprime', descricao: 'A impressora HP do 2º andar aparece como offline para todos do setor financeiro desde hoje cedo.', de: 'lucas', categoria: 'Hardware › Impressora', status: 'aberto', dias: 0.2 },
+  { titulo: 'Sem acesso à VPN', descricao: 'Ao conectar na VPN de casa, recebo a mensagem "falha na autenticação". A senha de rede está correta.', de: 'lucas', categoria: 'Rede e internet › VPN', status: 'em andamento', resp: 'rafael', dias: 0.7,
     conversa: [['rafael', 'Olá, Lucas! Pode confirmar se o problema acontece também na rede do escritório?'], ['lucas', 'No escritório funciona normalmente, só de casa que falha.'], ['rafael', 'Obrigado. Vou verificar o certificado da VPN no seu usuário e te retorno.']] },
-  { titulo: 'Computador reiniciando sozinho', descricao: 'O desktop reinicia sem aviso várias vezes ao dia, principalmente ao abrir planilhas grandes.', de: 'juliana', prioridade: 'alta', categoria: 'hardware', status: 'em andamento', resp: 'carlos', dias: 2,
+  { titulo: 'Computador reiniciando sozinho', descricao: 'O desktop reinicia sem aviso várias vezes ao dia, principalmente ao abrir planilhas grandes.', de: 'juliana', categoria: 'Hardware › Computador ou notebook', status: 'em andamento', resp: 'carlos', dias: 2,
     conversa: [['carlos', 'Juliana, vou passar na sua mesa às 14h para verificar a fonte e a temperatura do equipamento.']] },
-  { titulo: 'Instalação do Power BI Desktop', descricao: 'Preciso do Power BI Desktop instalado para montar os relatórios do trimestre.', de: 'pedro', prioridade: 'baixa', categoria: 'software', status: 'aberto', dias: 0.5 },
-  { titulo: 'Backup noturno não executado', descricao: 'O relatório de backup de hoje indica falha na rotina do servidor de arquivos.', de: 'pedro', prioridade: 'critica', categoria: 'software', status: 'em andamento', resp: 'rafael', dias: 0.13,
+  { titulo: 'Instalação do Power BI Desktop', descricao: 'Preciso do Power BI Desktop instalado para montar os relatórios do trimestre.', de: 'pedro', categoria: 'Software e sistemas › Instalação de programa', status: 'aberto', dias: 0.5 },
+  { titulo: 'Backup noturno não executado', descricao: 'O relatório de backup de hoje indica falha na rotina do servidor de arquivos.', de: 'pedro', categoria: 'Software e sistemas › Backup e servidores', status: 'em andamento', resp: 'rafael', dias: 0.13,
     conversa: [['rafael', 'Já estou verificando os logs da rotina de backup no servidor.']] },
-  { titulo: 'Telefone IP sem sinal', descricao: 'O ramal 2045 está mudo desde a mudança de mesa.', de: 'juliana', prioridade: 'media', categoria: 'rede', status: 'aberto', dias: 1.5 },
-  { titulo: 'E-mail não sincroniza no celular', descricao: 'O Outlook do celular parou de receber e-mails desde ontem.', de: 'juliana', prioridade: 'media', categoria: 'email', status: 'resolvido', resp: 'rafael', dias: 3, resolveuEm: 5 },
-  { titulo: 'Sistema ERP fora do ar', descricao: 'Ninguém do comercial consegue acessar o ERP. Erro 503 na tela de login.', de: 'pedro', prioridade: 'critica', categoria: 'software', status: 'resolvido', resp: 'carlos', dias: 4, resolveuEm: 2 },
-  { titulo: 'Troca da senha do Wi-Fi de visitantes', descricao: 'A senha do Wi-Fi de visitantes precisa ser trocada para o evento de sexta.', de: 'lucas', prioridade: 'baixa', categoria: 'rede', status: 'resolvido', resp: 'rafael', dias: 5, resolveuEm: 24 },
-  { titulo: 'Monitor piscando', descricao: 'O monitor secundário pisca a cada poucos minutos.', de: 'juliana', prioridade: 'media', categoria: 'hardware', status: 'resolvido', resp: 'carlos', dias: 6, resolveuEm: 30 },
-  { titulo: 'Acesso à pasta do financeiro', descricao: 'Preciso de acesso de leitura à pasta compartilhada do financeiro.', de: 'pedro', prioridade: 'media', categoria: 'acessos', status: 'resolvido', resp: 'rafael', dias: 7, resolveuEm: 3 },
-  { titulo: 'Teclado com teclas falhando', descricao: 'As teclas A e S do teclado não respondem.', de: 'lucas', prioridade: 'baixa', categoria: 'hardware', status: 'resolvido', resp: 'carlos', dias: 8, resolveuEm: 30 },
-  { titulo: 'Lentidão no servidor de arquivos', descricao: 'Abrir arquivos da rede está levando mais de um minuto.', de: 'juliana', prioridade: 'alta', categoria: 'rede', status: 'resolvido', resp: 'rafael', dias: 9, resolveuEm: 11, respondeuEm: 3 },
-  { titulo: 'Criar usuário para novo colaborador', descricao: 'O novo analista começa na segunda e precisa de usuário de rede e e-mail.', de: 'pedro', prioridade: 'media', categoria: 'acessos', status: 'resolvido', resp: 'carlos', dias: 10, resolveuEm: 6 },
-  { titulo: 'Antivírus bloqueando sistema interno', descricao: 'O antivírus está colocando o executável do sistema de ponto em quarentena.', de: 'lucas', prioridade: 'alta', categoria: 'software', status: 'resolvido', resp: 'rafael', dias: 11, resolveuEm: 4 },
-  { titulo: 'Webcam não funciona no Teams', descricao: 'A webcam aparece como "em uso por outro aplicativo" nas reuniões.', de: 'juliana', prioridade: 'baixa', categoria: 'hardware', status: 'resolvido', resp: 'carlos', dias: 12, resolveuEm: 26 },
-  { titulo: 'Licença do Office expirada', descricao: 'O Word abre em modo somente leitura informando licença expirada.', de: 'lucas', prioridade: 'media', categoria: 'software', status: 'resolvido', resp: 'carlos', dias: 13, resolveuEm: 2 },
+  { titulo: 'Telefone IP sem sinal', descricao: 'O ramal 2045 está mudo desde a mudança de mesa.', de: 'juliana', categoria: 'Rede e internet › Telefone IP', status: 'aberto', dias: 1.5 },
+  { titulo: 'E-mail não sincroniza no celular', descricao: 'O Outlook do celular parou de receber e-mails desde ontem.', de: 'juliana', categoria: 'E-mail › Configuração de e-mail', status: 'resolvido', resp: 'rafael', dias: 3, resolveuEm: 5 },
+  { titulo: 'Sistema ERP fora do ar', descricao: 'Ninguém do comercial consegue acessar o ERP. Erro 503 na tela de login.', de: 'pedro', categoria: 'Software e sistemas › Sistema fora do ar', status: 'resolvido', resp: 'carlos', dias: 4, resolveuEm: 2 },
+  { titulo: 'Troca da senha do Wi-Fi de visitantes', descricao: 'A senha do Wi-Fi de visitantes precisa ser trocada para o evento de sexta.', de: 'lucas', categoria: 'Rede e internet › Wi-Fi', status: 'resolvido', resp: 'rafael', dias: 5, resolveuEm: 24 },
+  { titulo: 'Monitor piscando', descricao: 'O monitor secundário pisca a cada poucos minutos.', de: 'juliana', categoria: 'Hardware › Monitor e vídeo', status: 'resolvido', resp: 'carlos', dias: 6, resolveuEm: 30 },
+  { titulo: 'Acesso à pasta do financeiro', descricao: 'Preciso de acesso de leitura à pasta compartilhada do financeiro.', de: 'pedro', categoria: 'Acessos e senhas › Permissão em pasta ou sistema', status: 'resolvido', resp: 'rafael', dias: 7, resolveuEm: 3 },
+  { titulo: 'Teclado com teclas falhando', descricao: 'As teclas A e S do teclado não respondem.', de: 'lucas', categoria: 'Hardware › Teclado, mouse e webcam', status: 'resolvido', resp: 'carlos', dias: 8, resolveuEm: 30 },
+  { titulo: 'Lentidão no servidor de arquivos', descricao: 'Abrir arquivos da rede está levando mais de um minuto.', de: 'juliana', categoria: 'Rede e internet › Lentidão ou queda de rede', status: 'resolvido', resp: 'rafael', dias: 9, resolveuEm: 11, respondeuEm: 3 },
+  { titulo: 'Criar usuário para novo colaborador', descricao: 'O novo analista começa na segunda e precisa de usuário de rede e e-mail.', de: 'pedro', categoria: 'Acessos e senhas › Criar ou desativar usuário', status: 'resolvido', resp: 'carlos', dias: 10, resolveuEm: 6 },
+  { titulo: 'Antivírus bloqueando sistema interno', descricao: 'O antivírus está colocando o executável do sistema de ponto em quarentena.', de: 'lucas', categoria: 'Software e sistemas › Antivírus e segurança', status: 'resolvido', resp: 'rafael', dias: 11, resolveuEm: 4 },
+  { titulo: 'Webcam não funciona no Teams', descricao: 'A webcam aparece como "em uso por outro aplicativo" nas reuniões.', de: 'juliana', categoria: 'Hardware › Teclado, mouse e webcam', status: 'resolvido', resp: 'carlos', dias: 12, resolveuEm: 26 },
+  { titulo: 'Licença do Office expirada', descricao: 'O Word abre em modo somente leitura informando licença expirada.', de: 'lucas', categoria: 'Software e sistemas › Licenças', status: 'resolvido', resp: 'carlos', dias: 13, resolveuEm: 2 },
 ];
 
 function dadosIniciais() {
   const agora = Date.now();
   const iso = (ms) => new Date(ms).toISOString();
+  const { grupos, categorias } = catalogoInicial(iso(agora));
   const db = {
     usuarios: [],
+    grupos,
+    usuarios_grupos: [],
+    categorias,
     chamados: [],
     interacoes: [],
     anexos: [],
-    sequencias: { usuarios: 0, chamados: 0, interacoes: 0, anexos: 0 },
+    sequencias: {
+      usuarios: 0, chamados: 0, interacoes: 0, anexos: 0, grupos: grupos.length, categorias: categorias.length,
+    },
   };
   const novoId = (tabela) => (db.sequencias[tabela] += 1);
   const id = {};
@@ -109,7 +124,17 @@ function dadosIniciais() {
     db.usuarios.push(usuario);
   });
 
+  grupos.forEach((g) => {
+    (MEMBROS_GRUPOS[g.nome] || []).forEach((chave) => db.usuarios_grupos.push({ usuario_id: id[chave], grupo_id: g.id }));
+  });
+
+  // "Hardware › Impressora" -> subcategoria
+  const subPorCaminho = Object.fromEntries(categorias
+    .filter((c) => c.parent_id !== null)
+    .map((s) => [`${categorias.find((p) => p.id === s.parent_id).nome} › ${s.nome}`, s]));
+
   CHAMADOS.forEach((c) => {
+    const sub = subPorCaminho[c.categoria];
     const abertoEm = agora - c.dias * 24 * HORA;
     const resolvidoEm = c.resolveuEm ? abertoEm + c.resolveuEm * HORA : null;
     const MIN = 60 * 1000;
@@ -138,10 +163,13 @@ function dadosIniciais() {
       titulo: c.titulo,
       descricao: c.descricao,
       status: c.status,
-      prioridade: c.prioridade,
-      categoria: c.categoria,
+      prioridade: sub.prioridade,
+      categoria_id: sub.id,
+      grupo_id: sub.grupo_id,
       usuario_id: id[c.de],
       responsavel_id: c.resp ? id[c.resp] : null,
+      prazo_resposta: iso(abertoEm + sub.sla_resposta_horas * HORA),
+      prazo_solucao: iso(abertoEm + sub.sla_solucao_horas * HORA),
       resolvido_em: resolvidoEm ? iso(resolvidoEm) : null,
       primeira_resposta_em: primeiraResposta ? iso(primeiraResposta[3]) : null,
       createdAt: iso(abertoEm),

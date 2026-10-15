@@ -8,6 +8,7 @@
 
 import { AxiosError } from "axios";
 import { banco, salvar, proximoId } from "./banco";
+import { METAS_SLA } from "./catalogo";
 
 const STATUS = ["aberto", "em andamento", "resolvido"];
 const PRIORIDADES = ["critica", "alta", "media", "baixa"];
@@ -19,23 +20,10 @@ const LIMITE_ANEXO_MB = 1; // menor que no servidor real: o localStorage tem pou
 const DIA = 86400000;
 const HORA = 3600000;
 
-const CATEGORIAS = {
-  hardware: "Hardware",
-  software: "Software e sistemas",
-  rede: "Rede e internet",
-  acessos: "Acessos e senhas",
-  email: "E-mail",
-  outros: "Outros",
-};
-
-// Mesmas metas de backend/src/config/perfis.js (horas corridas)
-const METAS_SLA = {
-  critica: { resposta: 1, solucao: 4 },
-  alta: { resposta: 2, solucao: 8 },
-  media: { resposta: 4, solucao: 24 },
-  baixa: { resposta: 8, solucao: 72 },
-};
 const LIMITE_RISCO_SLA = 0.75;
+const ICONES = ["hardware", "software", "rede", "acessos", "email", "outros"];
+const HORAS_MAX = 2000;
+const MOTIVO_MAX = 500;
 
 const agora = () => new Date().toISOString();
 const texto = (v) => (typeof v === "string" ? v.trim() : "");
@@ -80,11 +68,62 @@ function chamadoComAcesso(idTexto, usuario) {
   return chamado;
 }
 
-function comPessoas(chamado) {
+/* ---------------------------- Catálogo ---------------------------- */
+// Mesmas regras de backend/src/services/catalogo.js
+
+const categoriaPorId = (id) => banco().categorias.find((c) => c.id === id);
+const grupoPorId = (id) => banco().grupos.find((g) => g.id === id);
+const grupoResumido = (id) => {
+  const g = grupoPorId(id);
+  return g ? { id: g.id, nome: g.nome } : null;
+};
+
+function nomeCompleto(sub) {
+  if (!sub) return "sem categoria";
+  const pai = categoriaPorId(sub.parent_id);
+  return pai ? `${pai.nome} › ${sub.nome}` : sub.nome;
+}
+
+// Subcategoria ativa (com categoria principal ativa) ou null
+function subcategoriaAtiva(id) {
+  if (!(Number.isInteger(id) && id > 0)) return null;
+  const sub = categoriaPorId(id);
+  if (!sub || sub.parent_id === null || !sub.ativo) return null;
+  return categoriaPorId(sub.parent_id)?.ativo ? sub : null;
+}
+
+// Categoria principal vale por todas as suas subcategorias
+const expandirCategorias = (ids) => banco().categorias
+  .filter((c) => c.parent_id !== null && (ids.includes(c.id) || ids.includes(c.parent_id)))
+  .map((c) => c.id);
+
+const gruposDoUsuario = (usuarioId) => banco().usuarios_grupos
+  .filter((v) => v.usuario_id === usuarioId)
+  .map((v) => v.grupo_id);
+
+const membrosDoGrupo = (grupoId) => banco().usuarios_grupos
+  .filter((v) => v.grupo_id === grupoId)
+  .map((v) => usuarioPorId(v.usuario_id))
+  .filter(Boolean);
+
+const ehMembro = (grupoId, usuarioId) =>
+  banco().usuarios_grupos.some((v) => v.grupo_id === grupoId && v.usuario_id === usuarioId);
+
+function categoriaResumida(id) {
+  const sub = categoriaPorId(id);
+  if (!sub) return null;
+  const pai = categoriaPorId(sub.parent_id);
+  return { id: sub.id, nome: sub.nome, parent_id: sub.parent_id, pai: pai ? { id: pai.id, nome: pai.nome, icone: pai.icone } : null };
+}
+
+// Chamado no formato da API: dados, SLA e relacionados
+function completo(chamado) {
   return {
     ...comSla(chamado),
     usuario: publico(usuarioPorId(chamado.usuario_id)) ?? null,
     responsavel: publico(usuarioPorId(chamado.responsavel_id)) ?? null,
+    grupo: grupoResumido(chamado.grupo_id),
+    categoria: categoriaResumida(chamado.categoria_id),
   };
 }
 
@@ -93,25 +132,49 @@ function comPessoas(chamado) {
 
 const ms = (data) => (data ? new Date(data).getTime() : null);
 
-function situacaoSla(inicio, horas, concluidoEm, momento) {
-  const prazo = inicio + horas * HORA;
+function situacaoSla(inicio, prazo, concluidoEm, momento) {
   if (concluidoEm) return concluidoEm <= prazo ? "cumprido" : "violado";
   if (momento > prazo) return "estourado";
-  if (momento - inicio >= horas * HORA * LIMITE_RISCO_SLA) return "em_risco";
+  if (momento - inicio >= (prazo - inicio) * LIMITE_RISCO_SLA) return "em_risco";
   return "no_prazo";
 }
 
-function calcularSla(chamado, momento = Date.now()) {
-  const meta = METAS_SLA[chamado.prioridade] || METAS_SLA.media;
+// Prazos gravados no chamado (com as metas da prioridade como reserva)
+function prazosDoChamado(chamado) {
   const inicio = ms(chamado.createdAt);
-  const prazo = (horas) => new Date(inicio + horas * HORA).toISOString();
+  const meta = METAS_SLA[chamado.prioridade] || METAS_SLA.media;
   return {
-    resposta: { prazo: prazo(meta.resposta), situacao: situacaoSla(inicio, meta.resposta, ms(chamado.primeira_resposta_em), momento) },
-    solucao: { prazo: prazo(meta.solucao), situacao: situacaoSla(inicio, meta.solucao, ms(chamado.resolvido_em), momento) },
+    inicio,
+    resposta: ms(chamado.prazo_resposta) ?? inicio + meta.resposta * HORA,
+    solucao: ms(chamado.prazo_solucao) ?? inicio + meta.solucao * HORA,
   };
 }
 
-const prazoSolucaoMs = (c) => ms(c.createdAt) + (METAS_SLA[c.prioridade] || METAS_SLA.media).solucao * HORA;
+function calcularSla(chamado, momento = Date.now()) {
+  const { inicio, resposta, solucao } = prazosDoChamado(chamado);
+  return {
+    resposta: { prazo: new Date(resposta).toISOString(), situacao: situacaoSla(inicio, resposta, ms(chamado.primeira_resposta_em), momento) },
+    solucao: { prazo: new Date(solucao).toISOString(), situacao: situacaoSla(inicio, solucao, ms(chamado.resolvido_em), momento) },
+  };
+}
+
+function calcularPrazos(inicio, horasResposta, horasSolucao) {
+  const base = ms(inicio);
+  return {
+    prazo_resposta: new Date(base + Number(horasResposta) * HORA).toISOString(),
+    prazo_solucao: new Date(base + Number(horasSolucao) * HORA).toISOString(),
+  };
+}
+
+function horasSla(categoria, prioridade) {
+  const meta = METAS_SLA[prioridade] || METAS_SLA.media;
+  return {
+    resposta: categoria?.sla_resposta_horas ?? meta.resposta,
+    solucao: categoria?.sla_solucao_horas ?? meta.solucao,
+  };
+}
+
+const prazoSolucaoMs = (c) => prazosDoChamado(c).solucao;
 const comSla = (chamado) => ({ ...chamado, sla: calcularSla(chamado) });
 const percentual = (parte, total) => (total ? Math.round((parte / total) * 100) : null);
 
@@ -176,7 +239,12 @@ const rotas = [
 
     const status = lista(params.status, STATUS);
     const prioridades = lista(params.prioridade, PRIORIDADES);
-    const categorias = lista(params.categoria, Object.keys(CATEGORIAS));
+    const ids = (valor) => String(valor || "").split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    const categorias = ids(params.categoria).length ? expandirCategorias(ids(params.categoria)) : null;
+    let grupos = null;
+    if (params.grupo === "meus") grupos = gruposDoUsuario(eu.id);
+    else if (params.grupo === "nenhum") grupos = [null];
+    else if (ids(params.grupo).length) grupos = ids(params.grupo);
     const momento = Date.now();
     const pendente = (c) => c.status !== "resolvido";
     const situacaoSolucao = (c) => calcularSla(c, momento).solucao.situacao;
@@ -186,7 +254,8 @@ const rotas = [
     let filtrados = escopo.filter((c) => {
       if (status.length && !status.includes(c.status)) return false;
       if (prioridades.length && !prioridades.includes(c.prioridade)) return false;
-      if (categorias.length && !categorias.includes(c.categoria)) return false;
+      if (categorias && !categorias.includes(c.categoria_id)) return false;
+      if (grupos && !grupos.includes(c.grupo_id)) return false;
       if (params.sla === "estourado" && !(pendente(c) && situacaoSolucao(c) === "estourado")) return false;
       if (params.sla === "em_risco" && !(pendente(c) && situacaoSolucao(c) === "em_risco")) return false;
       if (params.responsavel === "eu" && c.responsavel_id !== eu.id) return false;
@@ -214,7 +283,7 @@ const rotas = [
     const pagina = Math.max(1, parseInt(params.pagina, 10) || 1);
 
     return [200, {
-      dados: filtrados.slice((pagina - 1) * porPagina, pagina * porPagina).map(comPessoas),
+      dados: filtrados.slice((pagina - 1) * porPagina, pagina * porPagina).map(completo),
       total: filtrados.length,
       pagina,
       porPagina,
@@ -226,6 +295,9 @@ const rotas = [
         atribuidosAMim: escopo.filter((c) => pendente(c) && c.responsavel_id === eu.id).length,
         semResponsavel: escopo.filter((c) => pendente(c) && c.responsavel_id === null).length,
         atrasados: escopo.filter((c) => pendente(c) && situacaoSolucao(c) === "estourado").length,
+        doMeuGrupo: isEquipe(eu)
+          ? db.chamados.filter((c) => pendente(c) && gruposDoUsuario(eu.id).includes(c.grupo_id)).length
+          : 0,
       },
     }];
   }],
@@ -236,18 +308,21 @@ const rotas = [
     if (titulo.length < 3) falhar(400, "Informe um título (mínimo 3 caracteres).");
     if (titulo.length > 255) falhar(400, "O título deve ter no máximo 255 caracteres.");
     if (!descricao) falhar(400, "Descreva o problema.");
-    const prioridade = corpo.prioridade || "media";
-    if (!PRIORIDADES.includes(prioridade)) falhar(400, `Prioridade inválida. Use: ${PRIORIDADES.join(", ")}.`);
-    const categoria = corpo.categoria || "outros";
-    if (!CATEGORIAS[categoria]) falhar(400, `Categoria inválida. Use: ${Object.keys(CATEGORIAS).join(", ")}.`);
+    // A subcategoria define prioridade, prazos e grupo (prioridade enviada é ignorada)
+    const sub = subcategoriaAtiva(corpo.categoria_id);
+    if (!sub) falhar(400, 'Escolha uma subcategoria válida do catálogo ("categoria_id").');
+    const prioridade = sub.prioridade || "media";
+    const horas = horasSla(sub, prioridade);
     const quando = agora();
     const chamado = {
-      id: proximoId("chamados"), titulo, descricao, status: "aberto", prioridade, categoria,
+      id: proximoId("chamados"), titulo, descricao, status: "aberto", prioridade,
+      categoria_id: sub.id, grupo_id: sub.grupo_id ?? categoriaPorId(sub.parent_id).grupo_id ?? null,
       usuario_id: eu.id, responsavel_id: null, resolvido_em: null, primeira_resposta_em: null,
+      ...calcularPrazos(quando, horas.resposta, horas.solucao),
       createdAt: quando, updatedAt: quando,
     };
     banco().chamados.push(chamado);
-    return [201, comSla(chamado)];
+    return [201, completo(chamado)];
   }],
 
   ["GET", /^\/chamados\/([^/]+)$/, ({ eu, m }) => {
@@ -263,7 +338,7 @@ const rotas = [
     const anexos = db.anexos
       .filter((a) => a.chamado_id === chamado.id)
       .map(({ id, nome_original, createdAt }) => ({ id, nome_original, createdAt }));
-    return [200, { ...comPessoas(chamado), interacoes, anexos }];
+    return [200, { ...completo(chamado), interacoes, anexos }];
   }],
 
   ["PUT", /^\/chamados\/([^/]+)\/status$/, ({ eu, m, corpo }) => {
@@ -273,7 +348,7 @@ const rotas = [
     if (!isEquipe(eu) && !["aberto", "resolvido"].includes(status)) {
       falhar(403, "Apenas a equipe de suporte pode colocar o chamado em andamento.");
     }
-    if (status === chamado.status) return [200, comSla(chamado)];
+    if (status === chamado.status) return [200, completo(chamado)];
     const anterior = chamado.status;
     chamado.status = status;
     chamado.resolvido_em = status === "resolvido" ? agora() : null;
@@ -282,7 +357,7 @@ const rotas = [
     tocar(chamado);
     registrarEvento(chamado, eu, `alterou o status de "${anterior}" para "${status}"`);
     if (assumiu) registrarEvento(chamado, eu, "assumiu o chamado");
-    return [200, comSla(chamado)];
+    return [200, completo(chamado)];
   }],
 
   ["PUT", /^\/chamados\/([^/]+)\/prioridade$/, ({ eu, m, corpo }) => {
@@ -293,24 +368,72 @@ const rotas = [
     if (prioridade !== chamado.prioridade) {
       const anterior = chamado.prioridade;
       chamado.prioridade = prioridade;
+      Object.assign(chamado, calcularPrazos(chamado.createdAt, METAS_SLA[prioridade].resposta, METAS_SLA[prioridade].solucao));
       tocar(chamado);
       registrarEvento(chamado, eu, `alterou a prioridade de ${ROTULO_PRIORIDADE[anterior]} para ${ROTULO_PRIORIDADE[prioridade]}`);
     }
-    return [200, comSla(chamado)];
+    return [200, completo(chamado)];
   }],
 
   ["PUT", /^\/chamados\/([^/]+)\/categoria$/, ({ eu, m, corpo }) => {
     exigirPerfil(eu, "suporte", "admin");
     const chamado = chamadoComAcesso(m[1], eu);
-    const { categoria } = corpo;
-    if (!CATEGORIAS[categoria]) falhar(400, `Categoria inválida. Use: ${Object.keys(CATEGORIAS).join(", ")}.`);
-    if (categoria !== chamado.categoria) {
-      const anterior = chamado.categoria;
-      chamado.categoria = categoria;
+    const sub = subcategoriaAtiva(corpo.categoria_id);
+    if (!sub) falhar(400, 'Escolha uma subcategoria válida do catálogo ("categoria_id").');
+    if (sub.id !== chamado.categoria_id) {
+      const anterior = categoriaPorId(chamado.categoria_id);
+      const prioridadeAnterior = chamado.prioridade;
+      const prioridade = sub.prioridade || "media";
+      const horas = horasSla(sub, prioridade);
+      chamado.categoria_id = sub.id;
+      chamado.prioridade = prioridade;
+      Object.assign(chamado, calcularPrazos(chamado.createdAt, horas.resposta, horas.solucao));
       tocar(chamado);
-      registrarEvento(chamado, eu, `alterou a categoria de ${CATEGORIAS[anterior] || anterior} para ${CATEGORIAS[categoria]}`);
+      let mensagem = `alterou a categoria de ${nomeCompleto(anterior)} para ${nomeCompleto(sub)}`;
+      if (prioridade !== prioridadeAnterior) mensagem += ` (prioridade ${ROTULO_PRIORIDADE[prioridade]})`;
+      registrarEvento(chamado, eu, mensagem);
     }
-    return [200, comSla(chamado)];
+    return [200, completo(chamado)];
+  }],
+
+  ["PUT", /^\/chamados\/([^/]+)\/transferencia$/, ({ eu, m, corpo }) => {
+    exigirPerfil(eu, "suporte", "admin");
+    const chamado = chamadoComAcesso(m[1], eu);
+    const { grupo_id: grupoId, responsavel_id: responsavelId } = corpo;
+    const motivo = texto(corpo.motivo);
+    if (motivo.length < 3) falhar(400, "Informe o motivo da transferência.");
+    if (motivo.length > MOTIVO_MAX) falhar(400, `O motivo deve ter no máximo ${MOTIVO_MAX} caracteres.`);
+    const informouGrupo = grupoId !== undefined && grupoId !== null;
+    const informouResponsavel = responsavelId !== undefined && responsavelId !== null;
+    if (!informouGrupo && !informouResponsavel) falhar(400, "Informe o grupo e/ou o técnico de destino.");
+
+    let grupo = null;
+    if (informouGrupo) {
+      grupo = Number.isInteger(grupoId) ? grupoPorId(grupoId) : null;
+      if (!grupo || !grupo.ativo) falhar(400, "Grupo de destino não encontrado.");
+    }
+    let responsavel = null;
+    if (informouResponsavel) {
+      responsavel = Number.isInteger(responsavelId) ? usuarioPorId(responsavelId) : null;
+      if (!responsavel || !responsavel.ativo || !isEquipe(responsavel)) {
+        falhar(400, "O técnico precisa ser um usuário ativo da equipe (suporte ou admin).");
+      }
+      if (grupo && !ehMembro(grupo.id, responsavel.id)) falhar(400, `${responsavel.nome} não faz parte do grupo ${grupo.nome}.`);
+    }
+
+    const novoGrupo = grupo ? grupo.id : chamado.grupo_id;
+    let novoResponsavel = responsavel ? responsavel.id : chamado.responsavel_id;
+    if (grupo && !responsavel && grupo.id !== chamado.grupo_id) novoResponsavel = null;
+    if (novoGrupo === chamado.grupo_id && novoResponsavel === chamado.responsavel_id) {
+      falhar(400, "O chamado já está com esse grupo e técnico.");
+    }
+
+    chamado.grupo_id = novoGrupo;
+    chamado.responsavel_id = novoResponsavel;
+    tocar(chamado);
+    const destino = [grupo?.nome, responsavel?.nome].filter(Boolean).join(" / ");
+    registrarEvento(chamado, eu, `transferiu o chamado para ${destino}. Motivo: ${motivo}`);
+    return [200, completo(chamado)];
   }],
 
   ["PUT", /^\/chamados\/([^/]+)\/responsavel$/, ({ eu, m, corpo }) => {
@@ -327,13 +450,13 @@ const rotas = [
         falhar(400, "O responsável precisa ser um usuário ativo da equipe (suporte ou admin).");
       }
     }
-    if (novoId === chamado.responsavel_id) return [200, comSla(chamado)];
+    if (novoId === chamado.responsavel_id) return [200, completo(chamado)];
     chamado.responsavel_id = novoId;
     tocar(chamado);
     let mensagem = "removeu o responsável do chamado";
     if (responsavel) mensagem = responsavel.id === eu.id ? "assumiu o chamado" : `atribuiu o chamado a ${responsavel.nome}`;
     registrarEvento(chamado, eu, mensagem);
-    return [200, comSla(chamado)];
+    return [200, completo(chamado)];
   }],
 
   ["POST", /^\/chamados\/([^/]+)\/interacoes$/, ({ eu, m, corpo }) => {
@@ -388,8 +511,87 @@ const rotas = [
     const membros = banco().usuarios
       .filter((u) => u.ativo && isEquipe(u))
       .sort((a, b) => a.nome.localeCompare(b.nome))
-      .map(({ id, nome, perfil }) => ({ id, nome, perfil }));
+      .map(({ id, nome, perfil }) => ({
+        id, nome, perfil,
+        grupos: gruposDoUsuario(id).map(grupoPorId).filter((g) => g?.ativo)
+          .sort((a, b) => a.id - b.id).map((g) => ({ id: g.id, nome: g.nome })),
+      }));
     return [200, membros];
+  }],
+
+  /* ----- Catálogo (leitura para todos; edição só admin) ----- */
+
+  ["GET", /^\/categorias$/, ({ eu, params }) => {
+    const incluirInativas = params.inativas === "1" && eu.perfil === "admin";
+    return [200, arvoreCategorias(incluirInativas)];
+  }],
+
+  ["POST", /^\/categorias$/, ({ eu, corpo }) => {
+    exigirPerfil(eu, "admin");
+    const parentId = corpo.parent_id ?? null;
+    let pai = null;
+    if (parentId !== null) {
+      pai = Number.isInteger(parentId) ? categoriaPorId(parentId) : null;
+      if (!pai || pai.parent_id !== null) falhar(400, "A categoria principal informada não existe.");
+    }
+    const dados = validarCategoria(corpo, { ehSubcategoria: Boolean(pai) });
+    if (nomeDeCategoriaEmUso(dados.nome, parentId)) falhar(409, "Já existe um item com esse nome neste nível do catálogo.");
+    const categoria = {
+      id: proximoId("categorias"), nome: dados.nome, descricao: dados.descricao ?? null,
+      icone: pai ? null : dados.icone || "outros", parent_id: parentId,
+      prioridade: dados.prioridade ?? null,
+      sla_resposta_horas: dados.sla_resposta_horas ?? null, sla_solucao_horas: dados.sla_solucao_horas ?? null,
+      grupo_id: dados.grupo_id !== undefined ? dados.grupo_id : pai?.grupo_id ?? null,
+      ativo: dados.ativo ?? true,
+    };
+    banco().categorias.push(categoria);
+    return [201, { ...categoria }];
+  }],
+
+  ["PUT", /^\/categorias\/([^/]+)$/, ({ eu, m, corpo }) => {
+    exigirPerfil(eu, "admin");
+    const categoria = categoriaPorId(Number(m[1]));
+    if (!categoria) falhar(404, "Categoria não encontrada.");
+    const dados = validarCategoria(corpo, { ehSubcategoria: categoria.parent_id !== null, atual: categoria });
+    if (dados.nome && nomeDeCategoriaEmUso(dados.nome, categoria.parent_id, categoria.id)) {
+      falhar(409, "Já existe um item com esse nome neste nível do catálogo.");
+    }
+    Object.assign(categoria, dados);
+    return [200, { ...categoria }];
+  }],
+
+  /* ----- Grupos técnicos ----- */
+
+  ["GET", /^\/grupos$/, ({ eu }) => {
+    exigirPerfil(eu, "suporte", "admin");
+    const { grupos, chamados } = banco();
+    return [200, [...grupos].sort((a, b) => a.id - b.id).map((g) => ({
+      ...grupoComMembros(g),
+      pendentes: chamados.filter((c) => c.status !== "resolvido" && c.grupo_id === g.id).length,
+    }))];
+  }],
+
+  ["POST", /^\/grupos$/, ({ eu, corpo }) => {
+    exigirPerfil(eu, "admin");
+    const dados = validarGrupo(corpo);
+    const membros = corpo.membros !== undefined ? validarMembros(corpo.membros) : [];
+    const grupo = {
+      id: proximoId("grupos"), nome: dados.nome, descricao: dados.descricao ?? null, ativo: dados.ativo ?? true, createdAt: agora(),
+    };
+    banco().grupos.push(grupo);
+    definirMembros(grupo.id, membros);
+    return [201, grupoComMembros(grupo)];
+  }],
+
+  ["PUT", /^\/grupos\/([^/]+)$/, ({ eu, m, corpo }) => {
+    exigirPerfil(eu, "admin");
+    const grupo = grupoPorId(Number(m[1]));
+    if (!grupo) falhar(404, "Grupo não encontrado.");
+    const dados = validarGrupo(corpo, grupo);
+    const membros = corpo.membros !== undefined ? validarMembros(corpo.membros) : null;
+    Object.assign(grupo, dados);
+    if (membros) definirMembros(grupo.id, membros);
+    return [200, grupoComMembros(grupo)];
   }],
 
   ["GET", /^\/admin\/resumo$/, ({ eu, params }) => {
@@ -431,6 +633,8 @@ const rotas = [
     if (!usuario) falhar(404, "Usuário não encontrado.");
     if (usuario.id === eu.id && corpo.perfil !== "admin") falhar(400, "Você não pode remover o seu próprio perfil de admin.");
     usuario.perfil = corpo.perfil;
+    // Quem deixa a equipe sai também dos grupos técnicos
+    if (!isEquipe(usuario)) definirGruposDoUsuario(usuario.id, []);
     return [200, { ...publico(usuario), ativo: usuario.ativo, createdAt: usuario.createdAt }];
   }],
 
@@ -447,6 +651,126 @@ const rotas = [
 
 // Rotas que não exigem login
 const PUBLICAS = ["/register", "/login"];
+
+/* ---------------- Validações do catálogo e dos grupos ---------------- */
+// Mesmas regras de CategoriaController e GrupoController (nomes comparados
+// sem diferenciar maiúsculas e acentos, como o MariaDB)
+
+const ordenarCatalogo = (lista) => lista.sort((a, b) => (
+  (a.nome.startsWith("Outros") - b.nome.startsWith("Outros")) || a.nome.localeCompare(b.nome, "pt-BR")
+));
+
+function arvoreCategorias(incluirInativas) {
+  const visivel = (c) => incluirInativas || c.ativo;
+  const comGrupo = (c) => ({ ...c, grupo: grupoResumido(c.grupo_id) });
+  const { categorias } = banco();
+  return ordenarCatalogo(categorias
+    .filter((c) => c.parent_id === null && visivel(c))
+    .map((c) => ({
+      ...comGrupo(c),
+      subcategorias: ordenarCatalogo(categorias.filter((s) => s.parent_id === c.id && visivel(s)).map(comGrupo)),
+    })));
+}
+
+const horasValidas = (h) => typeof h === "number" && Number.isFinite(h) && h > 0 && h <= HORAS_MAX;
+
+function validarCategoria(corpo, { ehSubcategoria, atual }) {
+  const dados = {};
+  if (corpo.nome !== undefined || !atual) {
+    const nome = texto(corpo.nome);
+    if (nome.length < 2 || nome.length > 100) falhar(400, "Informe o nome (de 2 a 100 caracteres).");
+    dados.nome = nome;
+  }
+  if (corpo.descricao !== undefined) {
+    const descricao = texto(corpo.descricao);
+    if (descricao.length > 255) falhar(400, "A descrição deve ter no máximo 255 caracteres.");
+    dados.descricao = descricao || null;
+  }
+  if (corpo.ativo !== undefined) {
+    if (typeof corpo.ativo !== "boolean") falhar(400, 'Informe "ativo" como true ou false.');
+    dados.ativo = corpo.ativo;
+  }
+  if (corpo.grupo_id !== undefined) {
+    if (corpo.grupo_id !== null && !(Number.isInteger(corpo.grupo_id) && grupoPorId(corpo.grupo_id))) {
+      falhar(400, "Grupo não encontrado.");
+    }
+    dados.grupo_id = corpo.grupo_id;
+  }
+  if (!ehSubcategoria) {
+    if (corpo.icone !== undefined) {
+      if (!ICONES.includes(corpo.icone)) falhar(400, `Ícone inválido. Use: ${ICONES.join(", ")}.`);
+      dados.icone = corpo.icone;
+    }
+    return dados;
+  }
+  if (corpo.prioridade !== undefined || !atual) {
+    if (!PRIORIDADES.includes(corpo.prioridade)) falhar(400, `Prioridade inválida. Use: ${PRIORIDADES.join(", ")}.`);
+    dados.prioridade = corpo.prioridade;
+  }
+  const meta = METAS_SLA[dados.prioridade || atual?.prioridade];
+  const resposta = corpo.sla_resposta_horas ?? (atual ? atual.sla_resposta_horas : meta.resposta);
+  const solucao = corpo.sla_solucao_horas ?? (atual ? atual.sla_solucao_horas : meta.solucao);
+  if (!horasValidas(resposta) || !horasValidas(solucao)) falhar(400, `Os prazos devem ser números de horas entre 0 e ${HORAS_MAX}.`);
+  if (resposta > solucao) falhar(400, "O prazo de resposta não pode ser maior que o de solução.");
+  dados.sla_resposta_horas = resposta;
+  dados.sla_solucao_horas = solucao;
+  return dados;
+}
+
+const nomeDeCategoriaEmUso = (nome, parentId, ignorarId) =>
+  banco().categorias.some((c) => normalizar(c.nome) === normalizar(nome) && c.parent_id === parentId && c.id !== ignorarId);
+
+function validarGrupo(corpo, atual) {
+  const dados = {};
+  if (corpo.nome !== undefined || !atual) {
+    const nome = texto(corpo.nome);
+    if (nome.length < 2 || nome.length > 100) falhar(400, "Informe o nome do grupo (de 2 a 100 caracteres).");
+    if (banco().grupos.some((g) => normalizar(g.nome) === normalizar(nome) && g.id !== atual?.id)) {
+      falhar(409, "Já existe um grupo com esse nome.");
+    }
+    dados.nome = nome;
+  }
+  if (corpo.descricao !== undefined) {
+    const descricao = texto(corpo.descricao);
+    if (descricao.length > 255) falhar(400, "A descrição deve ter no máximo 255 caracteres.");
+    dados.descricao = descricao || null;
+  }
+  if (corpo.ativo !== undefined) {
+    if (typeof corpo.ativo !== "boolean") falhar(400, 'Informe "ativo" como true ou false.');
+    dados.ativo = corpo.ativo;
+  }
+  return dados;
+}
+
+function validarMembros(membros) {
+  if (!Array.isArray(membros) || !membros.every((id) => Number.isInteger(id) && id > 0)) {
+    falhar(400, 'Informe "membros" como uma lista de IDs de usuários.');
+  }
+  const ids = [...new Set(membros)];
+  if (!ids.every((id) => isEquipe(usuarioPorId(id)))) falhar(400, "Os membros precisam ser usuários da equipe (suporte ou admin).");
+  return ids;
+}
+
+function definirMembros(grupoId, ids) {
+  const db = banco();
+  db.usuarios_grupos = db.usuarios_grupos.filter((v) => v.grupo_id !== grupoId)
+    .concat(ids.map((usuarioId) => ({ usuario_id: usuarioId, grupo_id: grupoId })));
+}
+
+function definirGruposDoUsuario(usuarioId, ids) {
+  const db = banco();
+  db.usuarios_grupos = db.usuarios_grupos.filter((v) => v.usuario_id !== usuarioId)
+    .concat(ids.map((grupoId) => ({ usuario_id: usuarioId, grupo_id: grupoId })));
+}
+
+function grupoComMembros(g) {
+  return {
+    id: g.id, nome: g.nome, descricao: g.descricao, ativo: g.ativo,
+    membros: membrosDoGrupo(g.id)
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+      .map((u) => ({ ...publico(u), ativo: u.ativo })),
+  };
+}
 
 function resumoAdmin(fuso) {
   const { chamados, usuarios } = banco();
@@ -497,11 +821,30 @@ function resumoAdmin(fuso) {
       semResposta: pendentes.filter((c) => sla(c).resposta.situacao === "estourado").length,
     },
     porDia,
-    porCategoria: Object.keys(CATEGORIAS).map((categoria) => ({
-      categoria,
-      total: abertos30.filter((c) => c.categoria === categoria).length,
-      pendentes: abertos30.filter((c) => c.categoria === categoria && c.status !== "resolvido").length,
-    })),
+    porCategoria: [...banco().categorias]
+      .filter((c) => c.parent_id === null)
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+      .map((categoria) => {
+        const subs = expandirCategorias([categoria.id]);
+        const daCategoria = abertos30.filter((c) => subs.includes(c.categoria_id));
+        return {
+          id: categoria.id, nome: categoria.nome, icone: categoria.icone,
+          total: daCategoria.length,
+          pendentes: daCategoria.filter((c) => c.status !== "resolvido").length,
+        };
+      }),
+    porGrupo: banco().grupos
+      .filter((g) => g.ativo)
+      .sort((a, b) => a.id - b.id)
+      .map((grupo) => {
+        const fila = pendentes.filter((c) => c.grupo_id === grupo.id);
+        return {
+          id: grupo.id, nome: grupo.nome,
+          pendentes: fila.length,
+          semResponsavel: fila.filter((c) => !c.responsavel_id).length,
+          estourados: fila.filter((c) => sla(c).solucao.situacao === "estourado").length,
+        };
+      }),
     equipe: ativos
       .filter(isEquipe)
       .map((u) => {
@@ -523,7 +866,7 @@ function resumoAdmin(fuso) {
     pendentesMaisAntigos: [...pendentes]
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
       .slice(0, 5)
-      .map(comPessoas),
+      .map(completo),
   };
 }
 

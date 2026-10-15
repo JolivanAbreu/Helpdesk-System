@@ -1,5 +1,5 @@
 // src/config/perfis.js
-// Perfis de acesso, status, prioridades, categorias e metas de atendimento (SLA).
+// Perfis de acesso, status, prioridades e metas de atendimento (SLA).
 
 const PERFIS = ['comum', 'suporte', 'admin'];
 
@@ -13,16 +13,9 @@ const PRIORIDADES = ['critica', 'alta', 'media', 'baixa'];
 
 const ROTULO_PRIORIDADE = { critica: 'crítica', alta: 'alta', media: 'média', baixa: 'baixa' };
 
-const CATEGORIAS = {
-  hardware: 'Hardware',
-  software: 'Software e sistemas',
-  rede: 'Rede e internet',
-  acessos: 'Acessos e senhas',
-  email: 'E-mail',
-  outros: 'Outros',
-};
-
-// Metas de atendimento, em horas corridas a partir da abertura do chamado.
+// Metas de atendimento por prioridade, em horas corridas a partir da abertura.
+// São o padrão das subcategorias novas e a base quando a equipe muda a
+// prioridade de um chamado manualmente.
 // resposta: prazo para a primeira mensagem da equipe ao solicitante
 // solucao: prazo para o chamado ser resolvido
 const METAS_SLA = {
@@ -39,5 +32,5 @@ const isEquipe = (usuario) => PERFIS_EQUIPE.includes(usuario.perfil);
 
 module.exports = {
   PERFIS, PERFIS_EQUIPE, STATUS_CHAMADO, PRIORIDADES, ROTULO_PRIORIDADE,
-  CATEGORIAS, METAS_SLA, LIMITE_RISCO_SLA, isEquipe,
+  METAS_SLA, LIMITE_RISCO_SLA, isEquipe,
 };
