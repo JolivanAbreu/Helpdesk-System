@@ -9,7 +9,9 @@
     "db:migrate": "sequelize-cli db:migrate",
     "db:seed": "sequelize-cli db:seed:all",
     "db:reset": "sequelize-cli db:migrate:undo:all && sequelize-cli db:migrate && sequelize-cli db:seed:all",
-    "test": "echo \"Nenhum teste configurado ainda\" && exit 0"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cobertura": "vitest run --coverage"
   },
   "keywords": [],
   "author": "",
@@ -27,7 +29,10 @@
     "sequelize": "^6.37.7"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^5.0.4",
     "nodemon": "^3.1.10",
-    "sequelize-cli": "^6.6.3"
+    "sequelize-cli": "^6.6.3",
+    "supertest": "^7.3.1",
+    "vitest": "^5.0.4"
   }
 }

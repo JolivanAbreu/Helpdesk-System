@@ -4,6 +4,7 @@ Central de atendimento de TI full-stack: colaboradores abrem chamados, a equipe 
 
 Nasceu da minha rotina como Analista de Suporte N1: a ideia é reproduzir o ciclo de vida real de um chamado, da abertura à resolução, com o fluxo de trabalho de ferramentas corporativas de service desk.
 
+[![CI](https://github.com/JolivanAbreu/Helpdesk-System/actions/workflows/ci.yml/badge.svg)](https://github.com/JolivanAbreu/Helpdesk-System/actions/workflows/ci.yml)
 ![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat&logo=nodedotjs&logoColor=white)
 ![Express](https://img.shields.io/badge/Express_5-000000?style=flat&logo=express&logoColor=white)
 ![Sequelize](https://img.shields.io/badge/Sequelize-52B0E7?style=flat&logo=sequelize&logoColor=white)
@@ -12,6 +13,8 @@ Nasceu da minha rotina como Analista de Suporte N1: a ideia é reproduzir o cicl
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat&logo=vite&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=flat&logo=tailwindcss&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-6E9F18?style=flat&logo=vitest&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=flat&logo=playwright&logoColor=white)
 
 **[Abrir a demonstração](https://nexodesk.vercel.app)**: as contas de acesso aparecem na tela de login.
 
@@ -57,30 +60,34 @@ Nasceu da minha rotina como Analista de Suporte N1: a ideia é reproduzir o cicl
 
 ```
 Helpdesk-System/
-├── backend/                 # API REST (Node.js + Express 5)
-│   ├── index.js             # Ponto de entrada (Helmet, CORS, rotas, erros)
-│   └── src/
-│       ├── config/          # Banco, upload (Multer), perfis, status e prioridades
-│       ├── controllers/     # Auth, Chamado, Interação, Anexo, Usuário, Admin
-│       ├── database/        # Conexão, migrations e seeders (Sequelize)
-│       ├── middleware/      # Auth JWT, permissões, acesso ao chamado, erros
-│       ├── models/          # Usuario, Chamado, Interacao, Anexo
-│       ├── services/        # Registro de eventos na timeline
-│       ├── utils/           # Validação de entrada
-│       └── routes.js
-├── frontend/                # SPA (React 19 + Vite + Tailwind)
-│   └── src/
-│       ├── pages/           # Login, Register, Chamados, ChamadoDetalhe, Admin
-│       ├── components/
-│       │   ├── ui/          # Design system: botão, campos, modal, selos, estados
-│       │   ├── layout/      # Barra lateral, cabeçalho de página, tela de login
-│       │   └── admin/       # Gráfico de chamados por dia
-│       ├── config/          # Marca (nome do sistema) e rótulos de domínio
-│       ├── demo/            # API simulada para a demonstração sem servidor
-│       ├── hooks/           # Atualização periódica
-│       └── services/api.js  # Axios com token e tratamento de sessão expirada
+├── backend/                     # API REST (Node.js + Express 5)
+│   ├── index.js                 # Sobe o servidor
+│   ├── src/
+│   │   ├── app.js               # App Express (usado pelo servidor e pelos testes)
+│   │   ├── routes.js
+│   │   ├── config/              # Banco, upload (Multer), perfis, status e prioridades
+│   │   ├── controllers/         # Auth, Chamado, Interação, Anexo, Usuário, Admin
+│   │   ├── database/            # Conexão, migrations e seeders (Sequelize)
+│   │   ├── middleware/          # Auth JWT, permissões, acesso ao chamado, erros
+│   │   ├── models/              # Usuario, Chamado, Interacao, Anexo
+│   │   ├── services/            # Registro de eventos na timeline
+│   │   └── utils/               # Validação de entrada
+│   └── tests/                   # Contrato (API real + demo) e servidor
+├── frontend/                    # SPA (React 19 + Vite + Tailwind)
+│   ├── src/
+│   │   ├── pages/               # Login, Register, Chamados, ChamadoDetalhe, Admin
+│   │   ├── components/
+│   │   │   ├── ui/              # Design system: botão, campos, modal, selos, estados
+│   │   │   ├── layout/          # Barra lateral, cabeçalho de página, tela de login
+│   │   │   └── admin/           # Gráfico de chamados por dia
+│   │   ├── config/              # Marca (nome do sistema) e rótulos de domínio
+│   │   ├── demo/                # API simulada para a demonstração sem servidor
+│   │   ├── hooks/               # Atualização periódica
+│   │   └── services/api.js      # Axios com token e tratamento de sessão expirada
+│   └── e2e/                     # Testes de interface (Playwright)
+├── .github/workflows/ci.yml     # CI: testes, lint e build a cada push
 ├── docs/screenshots/
-└── docker-compose.yml       # MariaDB para desenvolvimento
+└── docker-compose.yml           # MariaDB para desenvolvimento
 ```
 
 **Modelo de dados:** um `Usuario` abre vários `Chamados` e pode ser responsável por vários; cada `Chamado` tem várias `Interacoes` (mensagens e eventos) e vários `Anexos`.
@@ -116,18 +123,33 @@ Todas as rotas ficam sob `/api`. "Dono ou equipe" significa o autor do chamado, 
 
 Toda mudança de status, prioridade ou responsável fica registrada como evento na timeline do chamado.
 
+## 🧪 Testes
+
+| Suíte | O que cobre | Como rodar |
+|---|---|---|
+| **Contrato** (Vitest + Supertest) | Cadastro, login, sessão, fila (filtros, busca, ordem, paginação), status, prioridade, responsável, eventos da timeline, mensagens, anexos, indicadores e gestão de usuários | `cd backend && npm test` |
+| **Servidor** (Vitest + Supertest) | JSON malformado, cabeçalhos de segurança, CORS, token expirado ou falsificado, senha com hash, nome do arquivo em disco e limite de tentativas de login | (junto com a anterior) |
+| **Interface** (Playwright) | Os fluxos principais no navegador, com os três perfis, incluindo celular e a persistência da demo | `cd frontend && npm run test:e2e` |
+
+Os **testes de contrato rodam duas vezes**: uma contra a API real (Express + MariaDB) e outra contra a API simulada da demonstração. Assim, se uma regra mudar só de um lado, a suíte acusa a diferença, e a demo do portfólio nunca se comporta diferente do sistema de verdade.
+
+Ao todo são 154 testes de API, com cerca de 96% das linhas cobertas (`npm run test:cobertura`), e 24 testes de interface. O [GitHub Actions](.github/workflows/ci.yml) roda tudo, mais o lint e o build, a cada push.
+
+**Antes de rodar os testes da API:** deixe o banco de pé (`docker compose up -d`) e instale as dependências do frontend também (`cd frontend && npm install`), porque a suíte importa a API simulada de lá. Os testes usam um banco próprio, o `helpdesk_test`, criado automaticamente: seus dados de desenvolvimento não são tocados.
+
+**Antes dos testes de interface, só na primeira vez:** `npx playwright install chromium`. Eles sobem sozinhos o build da demo, então não precisam de backend nem de banco.
+
 ## 🌐 Demonstração online (Vercel)
 
-A demonstração pública roda **só com o frontend**: com `VITE_DEMO_LOCAL=true`, as chamadas à API são respondidas por uma API simulada no próprio navegador (`frontend/src/demo/`). Ela tem as mesmas rotas, regras de acesso e dados de exemplo do backend, e guarda tudo no `localStorage` de cada visitante. Não precisa de servidor nem de banco, não tem custo e não "dorme".
+A demonstração pública roda **só com o frontend**: no modo de build `demo` (`npm run build:demo`, que liga `VITE_DEMO_LOCAL=true`), as chamadas à API são respondidas por uma API simulada no próprio navegador (`frontend/src/demo/`). Ela tem as mesmas rotas, regras de acesso e dados de exemplo do backend, e guarda tudo no `localStorage` de cada visitante. Não precisa de servidor nem de banco, não tem custo e não "dorme".
 
 Fora da demo, esse código nem entra no pacote: o build normal continua usando a API real.
 
 **Publicar na Vercel**
 
 1. Em [vercel.com](https://vercel.com), **Add New → Project** e importe o repositório `Helpdesk-System`.
-2. Em **Root Directory**, escolha `frontend`. O `vercel.json` já define o build e o redirecionamento das rotas.
-3. Em **Environment Variables**, adicione `VITE_DEMO_LOCAL` = `true`.
-4. Clique em **Deploy**. Para usar o endereço `nexodesk.vercel.app`, dê ao projeto o nome `nexodesk` (ou ajuste o link no topo deste README).
+2. Em **Root Directory**, escolha `frontend`. O `vercel.json` já define o build da demo e o redirecionamento das rotas, então não há variável nenhuma para configurar.
+3. Clique em **Deploy**. Para usar o endereço `nexodesk.vercel.app`, dê ao projeto o nome `nexodesk` (ou ajuste o link no topo deste README).
 
 A cada `git push`, a Vercel publica a nova versão sozinha.
 
@@ -213,7 +235,7 @@ O nome e a descrição do sistema ficam em `frontend/src/config/marca.js`, e as 
 - [x] Fila de atendimento: prioridade, responsável, filtros e paginação
 - [x] Interface corporativa responsiva com design system próprio
 - [ ] Migração para TypeScript (com Prisma e Zod)
-- [ ] Testes automatizados da API
+- [x] Testes automatizados (API real, demo e interface) com CI no GitHub Actions
 - [x] Demonstração pública na Vercel (API simulada no navegador)
 - [ ] Troca de senha e recuperação por e-mail
 

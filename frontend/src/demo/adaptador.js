@@ -20,6 +20,8 @@ const DIA = 86400000;
 
 const agora = () => new Date().toISOString();
 const texto = (v) => (typeof v === "string" ? v.trim() : "");
+// Minúsculas e sem acentos, como a comparação padrão do MariaDB ("licenca" encontra "Licença")
+const normalizar = (v) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const isEquipe = (u) => EQUIPE.includes(u?.perfil);
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -128,7 +130,7 @@ const rotas = [
 
     const status = lista(params.status, STATUS);
     const prioridades = lista(params.prioridade, PRIORIDADES);
-    const busca = texto(params.busca).toLowerCase();
+    const busca = normalizar(texto(params.busca));
     const numero = Number(busca.replace(/^(#|ch-?)/i, ""));
 
     let filtrados = escopo.filter((c) => {
@@ -138,7 +140,7 @@ const rotas = [
       if (params.responsavel === "nenhum" && c.responsavel_id !== null) return false;
       if (Number(params.responsavel) > 0 && c.responsavel_id !== Number(params.responsavel)) return false;
       if (busca) {
-        const casa = c.titulo.toLowerCase().includes(busca) || c.descricao.toLowerCase().includes(busca)
+        const casa = normalizar(c.titulo).includes(busca) || normalizar(c.descricao).includes(busca)
           || (Number.isInteger(numero) && numero > 0 && c.id === numero);
         if (!casa) return false;
       }
@@ -432,8 +434,11 @@ function resumoAdmin(fuso) {
 /* ----------------------------- Adaptador ----------------------------- */
 
 export default async function adaptadorDemo(config) {
-  // Pequena espera para parecer uma rede de verdade (e mostrar os carregamentos)
-  await new Promise((r) => setTimeout(r, 120 + Math.random() * 180));
+  // Pequena espera para parecer uma rede de verdade (e mostrar os carregamentos).
+  // Nos testes automatizados (MODE === "test") não há espera.
+  if (import.meta.env?.MODE !== "test") {
+    await new Promise((r) => setTimeout(r, 120 + Math.random() * 180));
+  }
 
   const metodo = (config.method || "get").toUpperCase();
   const caminho = (config.url || "").replace(/^https?:\/\/[^/]+/, "").replace(/^\/api/, "").split("?")[0];

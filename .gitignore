@@ -10,6 +10,11 @@ node_modules/
 # Arquivos enviados pelos usuários (a pasta é mantida pelo .gitkeep)
 /backend/tmp/uploads/*
 !/backend/tmp/uploads/.gitkeep
+/backend/tmp/uploads-test/
+
+# Relatórios dos testes de interface
+/frontend/test-results/
+/frontend/playwright-report/
 
 # Logs
 npm-debug.log*

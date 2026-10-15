@@ -1,0 +1,80 @@
+# Integração contínua: roda a cada push na main e em cada pull request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API (real e demo)
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root_password_segura
+          MARIADB_USER: helpdesk_user
+          MARIADB_PASSWORD: user_password_segura
+          MARIADB_DATABASE: helpdesk_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      # A suíte também testa a API simulada da demo, que vive no frontend
+      - name: Instalar dependências do frontend
+        run: npm ci
+        working-directory: frontend
+      - name: Instalar dependências do backend
+        run: npm ci
+        working-directory: backend
+      - name: Testes de contrato e do servidor (com cobertura)
+        run: npm run test:cobertura
+        working-directory: backend
+
+  interface:
+    name: Interface (lint, build e Playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Build de produção
+        run: npm run build
+      - name: Instalar o Chromium do Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Testes de interface (contra o build da demo)
+        run: npm run test:e2e
+      - name: Guardar relatório em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relatorio-playwright
+          path: frontend/playwright-report
+          retention-days: 7

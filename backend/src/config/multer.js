@@ -3,7 +3,10 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 
-const UPLOADS_DIR = path.resolve(__dirname, '..', '..', 'tmp', 'uploads');
+// UPLOADS_DIR no .env muda a pasta (os testes usam uma pasta própria)
+const UPLOADS_DIR = process.env.UPLOADS_DIR
+  ? path.resolve(process.env.UPLOADS_DIR)
+  : path.resolve(__dirname, '..', '..', 'tmp', 'uploads');
 
 const MIMES_PERMITIDOS = {
   'image/jpeg': '.jpg',

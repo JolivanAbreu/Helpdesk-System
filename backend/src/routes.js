@@ -18,10 +18,11 @@ const chamadoAccess = require('./middleware/chamadoAccess');
 const routes = express.Router();
 const upload = multer(multerConfig);
 
-// Limita tentativas de login/cadastro por IP (proteção contra força bruta)
+// Limita tentativas de login/cadastro por IP (proteção contra força bruta).
+// LIMITE_TENTATIVAS_AUTH permite aumentar o limite nos testes automatizados.
 const limiteAuth = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 20,
+  limit: () => Number(process.env.LIMITE_TENTATIVAS_AUTH) || 20,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: { error: 'Muitas tentativas. Tente novamente em alguns minutos.' },
