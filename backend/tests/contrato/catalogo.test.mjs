@@ -43,6 +43,75 @@ describe.each(clientes.map((c) => [c.nome, c]))('Catálogo e grupos (%s)', (_nom
       expect(sub(arvore, SUB.wifi)).toMatchObject({ prioridade: 'baixa', sla_resposta_horas: 8, sla_solucao_horas: 72, grupo_id: GRUPO.infra });
     });
 
+    it('cada subcategoria traz o formulário: palavras-chave, sugestões, modelo e campos', async () => {
+      const arvore = await catalogo();
+      const impressora = sub(arvore, SUB.impressora);
+      expect(impressora.palavras_chave).toContain('toner');
+      expect(impressora.sugestoes).toContain('Impressora não imprime');
+      expect(impressora.modelo_descricao ?? null).toBeNull();
+      expect(impressora.campos).toEqual([
+        { chave: 'qual_impressora', rotulo: 'Qual impressora', tipo: 'texto', obrigatorio: true, ajuda: 'Modelo ou onde ela fica. Ex.: HP do 2º andar', opcoes: [] },
+        {
+          chave: 'problema', rotulo: 'Problema', tipo: 'selecao', obrigatorio: true, ajuda: null,
+          opcoes: ['Não imprime', 'Atolando papel', 'Sem toner', 'Impressão falhada ou manchada', 'Scanner', 'Outro'],
+        },
+      ]);
+      expect(sub(arvore, SUB.sistemaForaDoAr).modelo_descricao).toMatch(/^Mensagem de erro exibida:/);
+      expect(arvore.find((c) => c.id === CAT.hardware).campos).toEqual([]);
+    });
+
+    it('o admin monta o formulário de uma subcategoria e o próximo chamado segue ele', async () => {
+      const { status, data } = await api.req('PUT', `/categorias/${SUB.monitor}`, {
+        token: admin,
+        corpo: {
+          campos: [
+            { rotulo: 'Quantos monitores', tipo: 'numero', obrigatorio: true },
+            { rotulo: 'Conexão', tipo: 'selecao', opcoes: ['HDMI', 'DisplayPort', ' HDMI ', ''], ajuda: ' Veja atrás do monitor ' },
+            { rotulo: 'Conexão', tipo: 'texto' },
+          ],
+          sugestoes: ['Monitor novo', ' Monitor novo '],
+          palavras_chave: ['tela', 'display'],
+          modelo_descricao: '  Modelo:  ',
+        },
+      });
+      expect(status).toBe(200);
+      expect(data.campos).toEqual([
+        { chave: 'quantos_monitores', rotulo: 'Quantos monitores', tipo: 'numero', obrigatorio: true, ajuda: null, opcoes: [] },
+        { chave: 'conexao', rotulo: 'Conexão', tipo: 'selecao', obrigatorio: false, ajuda: 'Veja atrás do monitor', opcoes: ['HDMI', 'DisplayPort'] },
+        { chave: 'conexao_2', rotulo: 'Conexão', tipo: 'texto', obrigatorio: false, ajuda: null, opcoes: [] },
+      ]);
+      expect(data).toMatchObject({ sugestoes: ['Monitor novo'], palavras_chave: ['tela', 'display'], modelo_descricao: 'Modelo:' });
+
+      const abrir = (respostas) => api.req('POST', '/chamados', {
+        token: lucas, corpo: { titulo: 'Monitor', descricao: 'x', categoria_id: SUB.monitor, respostas },
+      });
+      expect((await abrir({ quantos_monitores: 'dois' })).data.error).toBe('"Quantos monitores" deve ser um número.');
+      const ok = await abrir({ quantos_monitores: 2, conexao: 'HDMI' });
+      expect(ok.status).toBe(201);
+      expect(ok.data.respostas).toEqual([
+        { chave: 'quantos_monitores', rotulo: 'Quantos monitores', valor: '2' },
+        { chave: 'conexao', rotulo: 'Conexão', valor: 'HDMI' },
+      ]);
+
+      // Mudar o formulário depois não altera as respostas já gravadas
+      await api.req('PUT', `/categorias/${SUB.monitor}`, { token: admin, corpo: { campos: [] } });
+      expect((await api.req('GET', `/chamados/${ok.data.id}`, { token: rafael })).data.respostas).toEqual(ok.data.respostas);
+    });
+
+    it.each([
+      ['campos fora de lista', { campos: 'x' }],
+      ['tipo de campo inválido', { campos: [{ rotulo: 'Data', tipo: 'data' }] }],
+      ['campo sem rótulo', { campos: [{ rotulo: ' ', tipo: 'texto' }] }],
+      ['seleção com uma opção só', { campos: [{ rotulo: 'Tipo', tipo: 'selecao', opcoes: ['A', ' A '] }] }],
+      ['campos demais', { campos: Array.from({ length: 9 }, (_, i) => ({ rotulo: `Campo ${i}`, tipo: 'texto' })) }],
+      ['sugestões fora de lista', { sugestoes: 'Monitor' }],
+      ['sugestão longa demais', { sugestoes: ['x'.repeat(121)] }],
+      ['palavras-chave com número', { palavras_chave: ['tela', 3] }],
+      ['modelo longo demais', { modelo_descricao: 'x'.repeat(1001) }],
+    ])('recusa formulário com %s', async (_caso, corpo) => {
+      expect((await api.req('PUT', `/categorias/${SUB.monitor}`, { token: admin, corpo })).status).toBe(400);
+    });
+
     it('itens desativados somem do catálogo; o admin pode pedir para vê-los', async () => {
       await api.req('PUT', `/categorias/${SUB.wifi}`, { token: admin, corpo: { ativo: false } });
       await api.req('PUT', `/categorias/${CAT.email}`, { token: admin, corpo: { ativo: false } });

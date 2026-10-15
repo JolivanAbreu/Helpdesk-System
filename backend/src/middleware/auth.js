@@ -26,7 +26,7 @@ module.exports = async (req, res, next) => {
   }
 
   const usuario = await Usuario.findByPk(decoded.id, {
-    attributes: ['id', 'nome', 'email', 'perfil', 'ativo'],
+    attributes: ['id', 'nome', 'email', 'perfil', 'ativo', 'setor', 'cargo', 'ramal', 'localizacao'],
   });
 
   if (!usuario) {

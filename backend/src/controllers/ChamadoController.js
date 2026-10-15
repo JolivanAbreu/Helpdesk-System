@@ -7,7 +7,8 @@ const Grupo = require('../models/Grupo');
 const {
   STATUS_CHAMADO, PRIORIDADES, ROTULO_PRIORIDADE, METAS_SLA, isEquipe,
 } = require('../config/perfis');
-const { texto, validarChamado } = require('../utils/validacao');
+const { texto, validarChamado, validarDadosOpcionais } = require('../utils/validacao');
+const { validarRespostas } = require('../services/formulario');
 const { registrarEvento } = require('../services/eventos');
 const {
   calcularSla, calcularPrazos, horasSla, prazoSolucaoSql,
@@ -176,7 +177,9 @@ module.exports = {
   async show(req, res) {
     const chamado = await Chamado.findByPk(req.chamado.id, {
       include: [
-        ...RELACIONADOS,
+        // No detalhe, o solicitante vem com setor e cargo
+        { association: 'usuario', attributes: [...USUARIO_RESUMIDO, 'setor', 'cargo'] },
+        ...RELACIONADOS.filter((r) => r.association !== 'usuario'),
         {
           association: 'interacoes',
           // Notas internas só aparecem para a equipe
@@ -205,6 +208,14 @@ module.exports = {
       return res.status(400).json({ error: 'Escolha uma subcategoria válida do catálogo ("categoria_id").' });
     }
 
+    // Respostas do formulário específico da subcategoria
+    const respostas = validarRespostas(sub.campos, req.body.respostas ?? {});
+    if (respostas.erro) return res.status(400).json({ error: respostas.erro });
+
+    // Contato e local: o que veio no formulário, ou o cadastro do funcionário
+    const contato = validarDadosOpcionais(req.body, ['contato', 'local']);
+    if (contato.erro) return res.status(400).json({ error: contato.erro });
+
     const prioridade = sub.prioridade || 'media';
     const horas = horasSla(sub, prioridade);
     const agora = new Date();
@@ -212,6 +223,9 @@ module.exports = {
     const chamado = await Chamado.create({
       titulo: texto(req.body.titulo),
       descricao: texto(req.body.descricao),
+      contato: contato.dados.contato !== undefined ? contato.dados.contato : req.user.ramal,
+      local: contato.dados.local !== undefined ? contato.dados.local : req.user.localizacao,
+      respostas: respostas.valor,
       status: 'aberto',
       prioridade,
       categoria_id: sub.id,

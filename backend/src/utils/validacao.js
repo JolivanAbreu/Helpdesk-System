@@ -37,4 +37,33 @@ function validarMensagem({ mensagem }) {
   return !texto(mensagem) ? 'A mensagem não pode ficar vazia.' : null;
 }
 
-module.exports = { texto, validarCadastro, validarLogin, validarChamado, validarMensagem };
+// Dados opcionais do funcionário e do contato do chamado: só os campos
+// enviados, com tamanho máximo. Vazio vira null. Devolve { erro } ou { dados }.
+const LIMITES_DADOS = {
+  setor: ['Setor', 80],
+  cargo: ['Cargo', 80],
+  ramal: ['Ramal ou telefone', 30],
+  localizacao: ['Localização', 120],
+  contato: ['Contato', 40],
+  local: ['Local do atendimento', 120],
+};
+
+function validarDadosOpcionais(corpo, campos) {
+  const dados = {};
+  for (const campo of campos) {
+    if (corpo[campo] === undefined) continue;
+    if (corpo[campo] !== null && typeof corpo[campo] !== 'string') {
+      return { erro: `${LIMITES_DADOS[campo][0]} deve ser um texto.` };
+    }
+    const valor = texto(corpo[campo]);
+    if (valor.length > LIMITES_DADOS[campo][1]) {
+      return { erro: `${LIMITES_DADOS[campo][0]} deve ter no máximo ${LIMITES_DADOS[campo][1]} caracteres.` };
+    }
+    dados[campo] = valor || null;
+  }
+  return { dados };
+}
+
+module.exports = {
+  texto, validarCadastro, validarLogin, validarChamado, validarMensagem, validarDadosOpcionais,
+};

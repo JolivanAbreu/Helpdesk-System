@@ -89,6 +89,33 @@ describe.each(clientes.map((c) => [c.nome, c]))('Administração (%s)', (_nome, 
       expect((await api.req('GET', '/usuarios', { token: rafael })).status).toBe(403);
     });
 
+    it('lista e cria usuários com setor, cargo, ramal e localização', async () => {
+      const { data } = await api.req('GET', '/usuarios', { token: admin });
+      expect(data.find((u) => u.id === U.lucas.id)).toMatchObject({
+        setor: 'Financeiro', cargo: 'Analista Financeiro', ramal: '2034', localizacao: 'Sede · 2º andar',
+      });
+
+      const novo = await api.req('POST', '/usuarios', {
+        token: admin,
+        corpo: { nome: 'Bia Souza', email: 'bia@empresa.com', senha: 'senha123', setor: ' Jurídico ', cargo: 'Advogada', ramal: '' },
+      });
+      expect(novo.status).toBe(201);
+      expect(novo.data).toMatchObject({ setor: 'Jurídico', cargo: 'Advogada', ramal: null, localizacao: null });
+    });
+
+    it('o admin edita os dados de um funcionário', async () => {
+      const { status, data } = await api.req('PUT', `/usuarios/${U.lucas.id}`, {
+        token: admin, corpo: { setor: 'Controladoria', ramal: '2040', nome: 'Ignorado' },
+      });
+      expect(status).toBe(200);
+      expect(data).toMatchObject({ nome: 'Lucas Pereira', setor: 'Controladoria', cargo: 'Analista Financeiro', ramal: '2040' });
+
+      expect((await api.req('PUT', `/usuarios/${U.lucas.id}`, { token: admin, corpo: { setor: 'x'.repeat(81) } })).status).toBe(400);
+      expect((await api.req('PUT', `/usuarios/${U.lucas.id}`, { token: admin, corpo: { cargo: 5 } })).status).toBe(400);
+      expect((await api.req('PUT', '/usuarios/999', { token: admin, corpo: { setor: 'TI' } })).status).toBe(404);
+      expect((await api.req('PUT', `/usuarios/${U.lucas.id}`, { token: rafael, corpo: { setor: 'TI' } })).status).toBe(403);
+    });
+
     it('cria usuário já com o perfil, que consegue entrar', async () => {
       const { status, data } = await api.req('POST', '/usuarios', {
         token: admin, corpo: { nome: 'Bruno Técnico', email: 'Bruno@Empresa.com', senha: 'senha123', perfil: 'suporte' },

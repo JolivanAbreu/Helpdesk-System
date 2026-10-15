@@ -75,6 +75,23 @@ describe.each(clientes.map((c) => [c.nome, c]))('Autenticação (%s)', (_nome, a
       const { status, data } = await api.req('GET', '/me', { token });
       expect(status).toBe(200);
       expect(data).toMatchObject({ id: U.juliana.id, nome: U.juliana.nome, perfil: 'comum', ativo: true });
+      // Dados do funcionário que preenchem o formulário de abertura
+      expect(data).toMatchObject({ setor: 'Recursos Humanos', cargo: 'Analista de RH', ramal: '2045', localizacao: 'Sede · 1º andar' });
+      expect(data).not.toHaveProperty('senha_hash');
+    });
+
+    it('o próprio usuário atualiza ramal e localização, mas não setor e cargo', async () => {
+      const token = await api.entrar(U.pedro.email);
+      const { status, data } = await api.req('PUT', '/me', {
+        token, corpo: { ramal: ' 2099 ', localizacao: 'Filial Norte', setor: 'Diretoria', cargo: 'CEO' },
+      });
+      expect(status).toBe(200);
+      expect(data).toMatchObject({ ramal: '2099', localizacao: 'Filial Norte', setor: 'Comercial', cargo: 'Gerente Comercial' });
+      expect((await api.req('GET', '/me', { token })).data).toMatchObject({ ramal: '2099', localizacao: 'Filial Norte' });
+
+      const longo = await api.req('PUT', '/me', { token, corpo: { localizacao: 'x'.repeat(121) } });
+      expect(longo.status).toBe(400);
+      expect(longo.data.error).toBe('Localização deve ter no máximo 120 caracteres.');
     });
 
     it('recusa requisição sem token ou com token inválido', async () => {

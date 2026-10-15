@@ -8,6 +8,11 @@ class Usuario extends Model {
       nome: DataTypes.STRING,
       email: DataTypes.STRING,
       perfil: DataTypes.STRING, // Ex: 'comum', 'suporte', 'admin'
+      // Dados do funcionário que preenchem o formulário de abertura
+      setor: DataTypes.STRING,
+      cargo: DataTypes.STRING,
+      ramal: DataTypes.STRING,
+      localizacao: DataTypes.STRING,
       senha_hash: DataTypes.STRING,
       ativo: {
         type: DataTypes.BOOLEAN,

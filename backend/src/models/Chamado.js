@@ -1,11 +1,16 @@
 // src/models/Chamado.js
 const { Model, DataTypes } = require('sequelize');
+const { colunaJson } = require('./json');
 
 class Chamado extends Model {
   static init(sequelize) {
     super.init({
       titulo: DataTypes.STRING,
       descricao: DataTypes.TEXT,
+      // Preenchidos no formulário de abertura
+      contato: DataTypes.STRING,
+      local: DataTypes.STRING,
+      respostas: colunaJson('respostas'),
       status: DataTypes.STRING,
       prioridade: {
         type: DataTypes.STRING,

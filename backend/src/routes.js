@@ -38,6 +38,8 @@ routes.post('/login', limiteAuth, authController.login);
 routes.use(auth);
 
 routes.get('/me', (req, res) => res.json(req.user));
+// O próprio usuário atualiza o contato (ramal e localização)
+routes.put('/me', UsuarioController.updateMeuContato);
 
 // Chamados
 routes.get('/chamados', ChamadoController.index);
@@ -73,6 +75,7 @@ routes.get('/chamados/:chamado_id/anexos/:anexo_id', chamadoAccess, AnexoControl
 routes.get('/admin/resumo', permission('admin'), AdminController.resumo);
 routes.get('/usuarios', permission('admin'), UsuarioController.index);
 routes.post('/usuarios', permission('admin'), UsuarioController.store);
+routes.put('/usuarios/:usuario_id', permission('admin'), UsuarioController.updateDados);
 routes.put('/usuarios/:usuario_id/perfil', permission('admin'), UsuarioController.updatePerfil);
 routes.put('/usuarios/:usuario_id/status', permission('admin'), UsuarioController.updateStatus);
 

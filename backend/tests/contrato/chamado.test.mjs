@@ -51,7 +51,7 @@ describe.each(clientes.map((c) => [c.nome, c]))('Chamado (%s)', (_nome, api) => 
     const horas = (chamado, prazo) => Math.round((Date.parse(chamado.sla[prazo].prazo) - Date.parse(chamado.createdAt)) / 360000) / 10;
 
     it('a subcategoria define prioridade, prazos e grupo; abre em aberto e sem responsável', async () => {
-      const { status, data } = await abrir({ titulo: '  Mouse sem fio parou  ', descricao: 'Trocou a pilha e nada.', categoria_id: SUB.perifericos });
+      const { status, data } = await abrir({ titulo: '  Mouse sem fio parou  ', descricao: 'Trocou a pilha e nada.', categoria_id: SUB.perifericos, respostas: { equipamento: 'Mouse' } });
       expect(status).toBe(201);
       expect(data).toMatchObject({
         id: 18, titulo: 'Mouse sem fio parou', status: 'aberto', prioridade: 'baixa',
@@ -73,14 +73,14 @@ describe.each(clientes.map((c) => [c.nome, c]))('Chamado (%s)', (_nome, api) => 
     });
 
     it('a subcategoria pode encaminhar direto para um grupo N2', async () => {
-      const { data } = await abrir({ titulo: 'ERP fora do ar', descricao: 'Erro 503.', categoria_id: SUB.sistemaForaDoAr });
+      const { data } = await abrir({ titulo: 'ERP fora do ar', descricao: 'Erro 503.', categoria_id: SUB.sistemaForaDoAr, respostas: { sistema: 'ERP', quem_esta_sem_acesso: 'Meu setor' } });
       expect(data).toMatchObject({ prioridade: 'critica', grupo_id: GRUPO.sistemas });
       expect(horas(data, 'resposta')).toBe(1);
       expect(horas(data, 'solucao')).toBe(4);
     });
 
     it('usa os prazos próprios da subcategoria quando diferem da prioridade', async () => {
-      const { data } = await abrir({ titulo: 'Senha expirada', descricao: 'Não consigo entrar.', categoria_id: SUB.redefinirSenha });
+      const { data } = await abrir({ titulo: 'Senha expirada', descricao: 'Não consigo entrar.', categoria_id: SUB.redefinirSenha, respostas: { senha_de_qual_sistema: 'Rede/Windows' } });
       expect(data.prioridade).toBe('alta');
       expect(horas(data, 'resposta')).toBe(0.5);
       expect(horas(data, 'solucao')).toBe(2);
@@ -116,9 +116,61 @@ describe.each(clientes.map((c) => [c.nome, c]))('Chamado (%s)', (_nome, api) => 
       expect(depois.sla).toEqual(antes.sla);
 
       // Os novos chamados já seguem a regra nova
-      const { data } = await abrir({ titulo: 'Impressora parou', descricao: 'x', categoria_id: SUB.impressora });
+      const { data } = await abrir({
+        titulo: 'Impressora parou', descricao: 'x', categoria_id: SUB.impressora, respostas: { qual_impressora: 'HP', problema: 'Sem toner' },
+      });
       expect(data.prioridade).toBe('critica');
       expect(horas(data, 'solucao')).toBe(2);
+    });
+  });
+
+  describe('formulário de abertura', () => {
+    const IMPRESSORA = { qual_impressora: '  HP do 2º andar  ', problema: 'Atolando papel' };
+    const abrir = (corpo, token = juliana) => api.req('POST', '/chamados', {
+      token, corpo: { titulo: 'Impressora atolando', descricao: 'Papel preso.', categoria_id: SUB.impressora, ...corpo },
+    });
+
+    it('grava as respostas com o rótulo de cada pergunta e ignora campos desconhecidos', async () => {
+      const { status, data } = await abrir({ respostas: { ...IMPRESSORA, inventado: 'x' } });
+      expect(status).toBe(201);
+      expect(data.respostas).toEqual([
+        { chave: 'qual_impressora', rotulo: 'Qual impressora', valor: 'HP do 2º andar' },
+        { chave: 'problema', rotulo: 'Problema', valor: 'Atolando papel' },
+      ]);
+      expect((await detalhe(data.id)).respostas).toEqual(data.respostas);
+    });
+
+    it('contato e local vêm do cadastro do funcionário quando não são informados', async () => {
+      const { data } = await abrir({ respostas: IMPRESSORA });
+      expect(data).toMatchObject({ contato: '2045', local: 'Sede · 1º andar' });
+    });
+
+    it('contato e local informados no formulário substituem o cadastro', async () => {
+      const { data } = await abrir({ respostas: IMPRESSORA, contato: ' (85) 99999-0000 ', local: 'Sala de reunião 3' });
+      expect(data).toMatchObject({ contato: '(85) 99999-0000', local: 'Sala de reunião 3' });
+      const limpo = await abrir({ respostas: IMPRESSORA, contato: '', local: null });
+      expect(limpo.data.contato ?? null).toBeNull();
+      expect(limpo.data.local ?? null).toBeNull();
+    });
+
+    it('o detalhe traz setor e cargo do solicitante para a equipe', async () => {
+      const chamado = await detalhe(3);
+      expect(chamado.usuario).toMatchObject({ nome: 'Juliana Rocha', setor: 'Recursos Humanos', cargo: 'Analista de RH' });
+      expect(chamado.respostas.map((r) => r.rotulo)).toEqual(['Tipo de equipamento', 'O que está acontecendo', 'Número de patrimônio']);
+      expect(chamado).toMatchObject({ contato: '2045', local: 'Sede · 1º andar' });
+    });
+
+    it.each([
+      ['campo obrigatório vazio', { respostas: { qual_impressora: 'HP' } }, 'Preencha "Problema".'],
+      ['opção que não existe', { respostas: { ...IMPRESSORA, problema: 'Pegou fogo' } }, 'Escolha uma das opções de "Problema".'],
+      ['resposta longa demais', { respostas: { ...IMPRESSORA, qual_impressora: 'x'.repeat(501) } }, '"Qual impressora" deve ter no máximo 500 caracteres.'],
+      ['respostas fora de objeto', { respostas: ['HP'] }, 'Informe "respostas" como um objeto { campo: valor }.'],
+      ['contato longo demais', { respostas: IMPRESSORA, contato: '9'.repeat(41) }, 'Contato deve ter no máximo 40 caracteres.'],
+      ['local que não é texto', { respostas: IMPRESSORA, local: 12 }, 'Local do atendimento deve ser um texto.'],
+    ])('recusa %s', async (_caso, corpo, mensagem) => {
+      const { status, data } = await abrir(corpo);
+      expect(status).toBe(400);
+      expect(data.error).toBe(mensagem);
     });
   });
 
@@ -374,7 +426,7 @@ describe.each(clientes.map((c) => [c.nome, c]))('Chamado (%s)', (_nome, api) => 
 
     it('resposta dentro do prazo fica como cumprida', async () => {
       const { data: novo } = await api.req('POST', '/chamados', {
-        token: lucas, corpo: { titulo: 'Mouse parou', descricao: 'Não clica.', categoria_id: SUB.perifericos },
+        token: lucas, corpo: { titulo: 'Mouse parou', descricao: 'Não clica.', categoria_id: SUB.perifericos, respostas: { equipamento: 'Mouse' } },
       });
       await enviar(novo.id, 'Troque a pilha, por favor.', carlos);
       expect((await detalhe(novo.id)).sla.resposta.situacao).toBe('cumprido');

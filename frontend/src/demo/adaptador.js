@@ -8,7 +8,7 @@
 
 import { AxiosError } from "axios";
 import { banco, salvar, proximoId } from "./banco";
-import { METAS_SLA } from "./catalogo";
+import { METAS_SLA, chaveDoCampo } from "./catalogo";
 
 const STATUS = ["aberto", "em andamento", "resolvido"];
 const PRIORIDADES = ["critica", "alta", "media", "baixa"];
@@ -24,6 +24,12 @@ const LIMITE_RISCO_SLA = 0.75;
 const ICONES = ["hardware", "software", "rede", "acessos", "email", "outros"];
 const HORAS_MAX = 2000;
 const MOTIVO_MAX = 500;
+const DADOS_FUNCIONARIO = ["setor", "cargo", "ramal", "localizacao"];
+const TIPOS_CAMPO = ["texto", "numero", "selecao"];
+const LIMITES = {
+  campos: 8, rotulo: 80, ajuda: 120, opcoes: 15, opcao: 60, resposta: 500,
+  palavras: 40, palavra: 40, sugestoes: 10, sugestao: 120, modelo: 1000,
+};
 
 const agora = () => new Date().toISOString();
 const texto = (v) => (typeof v === "string" ? v.trim() : "");
@@ -43,6 +49,11 @@ const falhar = (status, mensagem) => { throw new ErroHttp(status, mensagem); };
 /* ------------------------------ Apoio ------------------------------ */
 
 const publico = (u) => u && { id: u.id, nome: u.nome, email: u.email, perfil: u.perfil };
+// Com os dados do funcionário (setor, cargo, ramal, localização)
+const completoUsuario = (u) => ({
+  ...publico(u), ativo: u.ativo, createdAt: u.createdAt,
+  setor: u.setor ?? null, cargo: u.cargo ?? null, ramal: u.ramal ?? null, localizacao: u.localizacao ?? null,
+});
 const usuarioPorId = (id) => banco().usuarios.find((u) => u.id === id);
 
 function autenticar(config) {
@@ -204,6 +215,83 @@ const lerArquivo = (arquivo) => new Promise((resolve, reject) => {
   leitor.readAsDataURL(arquivo);
 });
 
+/* ---------------------------- Formulário ---------------------------- */
+// Mesmas regras de backend/src/services/formulario.js e utils/validacao.js
+
+const LIMITES_DADOS = {
+  setor: ["Setor", 80],
+  cargo: ["Cargo", 80],
+  ramal: ["Ramal ou telefone", 30],
+  localizacao: ["Localização", 120],
+  contato: ["Contato", 40],
+  local: ["Local do atendimento", 120],
+};
+
+function validarDadosOpcionais(corpo, campos) {
+  const dados = {};
+  for (const campo of campos) {
+    if (corpo[campo] === undefined) continue;
+    if (corpo[campo] !== null && typeof corpo[campo] !== "string") falhar(400, `${LIMITES_DADOS[campo][0]} deve ser um texto.`);
+    const valor = texto(corpo[campo]);
+    if (valor.length > LIMITES_DADOS[campo][1]) {
+      falhar(400, `${LIMITES_DADOS[campo][0]} deve ter no máximo ${LIMITES_DADOS[campo][1]} caracteres.`);
+    }
+    dados[campo] = valor || null;
+  }
+  return dados;
+}
+
+function validarLista(valor, { max, maxItem, nome }) {
+  if (!Array.isArray(valor) || !valor.every((v) => typeof v === "string")) falhar(400, `Informe "${nome}" como uma lista de textos.`);
+  const itens = [...new Set(valor.map((v) => v.trim()).filter(Boolean))];
+  if (itens.length > max) falhar(400, `"${nome}" aceita no máximo ${max} itens.`);
+  if (itens.some((v) => v.length > maxItem)) falhar(400, `Cada item de "${nome}" deve ter no máximo ${maxItem} caracteres.`);
+  return itens;
+}
+
+function validarCampos(campos) {
+  if (!Array.isArray(campos)) falhar(400, 'Informe "campos" como uma lista.');
+  if (campos.length > LIMITES.campos) falhar(400, `O formulário aceita no máximo ${LIMITES.campos} campos.`);
+  const valor = [];
+  for (const campo of campos) {
+    if (!campo || typeof campo !== "object") falhar(400, "Campo inválido no formulário.");
+    const rotulo = texto(campo.rotulo);
+    if (rotulo.length < 2 || rotulo.length > LIMITES.rotulo) falhar(400, `Cada campo precisa de um rótulo de 2 a ${LIMITES.rotulo} caracteres.`);
+    if (!TIPOS_CAMPO.includes(campo.tipo)) falhar(400, `Tipo de campo inválido em "${rotulo}". Use: ${TIPOS_CAMPO.join(", ")}.`);
+    const ajuda = texto(campo.ajuda);
+    if (ajuda.length > LIMITES.ajuda) falhar(400, `A ajuda de "${rotulo}" deve ter no máximo ${LIMITES.ajuda} caracteres.`);
+    let opcoes = [];
+    if (campo.tipo === "selecao") {
+      opcoes = validarLista(campo.opcoes ?? [], { max: LIMITES.opcoes, maxItem: LIMITES.opcao, nome: `opções de ${rotulo}` });
+      if (opcoes.length < 2) falhar(400, `"${rotulo}" precisa de pelo menos 2 opções.`);
+    }
+    let chave = chaveDoCampo(rotulo);
+    for (let n = 2; valor.some((c) => c.chave === chave); n += 1) chave = `${chaveDoCampo(rotulo)}_${n}`;
+    valor.push({ chave, rotulo, tipo: campo.tipo, obrigatorio: campo.obrigatorio === true, ajuda: ajuda || null, opcoes });
+  }
+  return valor;
+}
+
+function validarRespostas(campos, respostas = {}) {
+  if (respostas === null || typeof respostas !== "object" || Array.isArray(respostas)) {
+    falhar(400, 'Informe "respostas" como um objeto { campo: valor }.');
+  }
+  const valor = [];
+  for (const campo of campos) {
+    const bruto = respostas[campo.chave];
+    const resposta = typeof bruto === "number" ? String(bruto) : texto(bruto);
+    if (!resposta) {
+      if (campo.obrigatorio) falhar(400, `Preencha "${campo.rotulo}".`);
+      continue;
+    }
+    if (resposta.length > LIMITES.resposta) falhar(400, `"${campo.rotulo}" deve ter no máximo ${LIMITES.resposta} caracteres.`);
+    if (campo.tipo === "selecao" && !campo.opcoes.includes(resposta)) falhar(400, `Escolha uma das opções de "${campo.rotulo}".`);
+    if (campo.tipo === "numero" && !Number.isFinite(Number(resposta.replace(",", ".")))) falhar(400, `"${campo.rotulo}" deve ser um número.`);
+    valor.push({ chave: campo.chave, rotulo: campo.rotulo, valor: resposta });
+  }
+  return valor;
+}
+
 /* ------------------------------ Rotas ------------------------------ */
 
 const rotas = [
@@ -229,7 +317,17 @@ const rotas = [
     return [200, { usuario: publico(usuario), token: `demo.${usuario.id}` }];
   }],
 
-  ["GET", /^\/me$/, ({ eu }) => [200, { ...publico(eu), ativo: eu.ativo }]],
+  ["GET", /^\/me$/, ({ eu }) => {
+    const { createdAt, ...dados } = completoUsuario(eu); // eslint-disable-line no-unused-vars
+    return [200, dados];
+  }],
+
+  // O próprio usuário atualiza o contato que preenche os chamados
+  ["PUT", /^\/me$/, ({ eu, corpo }) => {
+    Object.assign(eu, validarDadosOpcionais(corpo, ["ramal", "localizacao"]));
+    const { createdAt, ...dados } = completoUsuario(eu); // eslint-disable-line no-unused-vars
+    return [200, dados];
+  }],
 
   ["GET", /^\/chamados$/, ({ eu, params }) => {
     const db = banco();
@@ -311,11 +409,16 @@ const rotas = [
     // A subcategoria define prioridade, prazos e grupo (prioridade enviada é ignorada)
     const sub = subcategoriaAtiva(corpo.categoria_id);
     if (!sub) falhar(400, 'Escolha uma subcategoria válida do catálogo ("categoria_id").');
+    const respostas = validarRespostas(sub.campos, corpo.respostas ?? {});
+    const contato = validarDadosOpcionais(corpo, ["contato", "local"]);
     const prioridade = sub.prioridade || "media";
     const horas = horasSla(sub, prioridade);
     const quando = agora();
     const chamado = {
       id: proximoId("chamados"), titulo, descricao, status: "aberto", prioridade,
+      contato: contato.contato !== undefined ? contato.contato : eu.ramal ?? null,
+      local: contato.local !== undefined ? contato.local : eu.localizacao ?? null,
+      respostas,
       categoria_id: sub.id, grupo_id: sub.grupo_id ?? categoriaPorId(sub.parent_id).grupo_id ?? null,
       usuario_id: eu.id, responsavel_id: null, resolvido_em: null, primeira_resposta_em: null,
       ...calcularPrazos(quando, horas.resposta, horas.solucao),
@@ -338,7 +441,14 @@ const rotas = [
     const anexos = db.anexos
       .filter((a) => a.chamado_id === chamado.id)
       .map(({ id, nome_original, createdAt }) => ({ id, nome_original, createdAt }));
-    return [200, { ...completo(chamado), interacoes, anexos }];
+    const solicitante = usuarioPorId(chamado.usuario_id);
+    return [200, {
+      ...completo(chamado),
+      // No detalhe, o solicitante vem com setor e cargo
+      usuario: solicitante ? { ...publico(solicitante), setor: solicitante.setor ?? null, cargo: solicitante.cargo ?? null } : null,
+      interacoes,
+      anexos,
+    }];
   }],
 
   ["PUT", /^\/chamados\/([^/]+)\/status$/, ({ eu, m, corpo }) => {
@@ -543,6 +653,8 @@ const rotas = [
       sla_resposta_horas: dados.sla_resposta_horas ?? null, sla_solucao_horas: dados.sla_solucao_horas ?? null,
       grupo_id: dados.grupo_id !== undefined ? dados.grupo_id : pai?.grupo_id ?? null,
       ativo: dados.ativo ?? true,
+      palavras_chave: dados.palavras_chave ?? [], sugestoes: dados.sugestoes ?? [],
+      modelo_descricao: dados.modelo_descricao ?? null, campos: dados.campos ?? [],
     };
     banco().categorias.push(categoria);
     return [201, { ...categoria }];
@@ -605,7 +717,7 @@ const rotas = [
     return [200, [...usuarios]
       .sort((a, b) => a.nome.localeCompare(b.nome))
       .map((u) => ({
-        ...publico(u), ativo: u.ativo, createdAt: u.createdAt,
+        ...completoUsuario(u),
         total_chamados: chamados.filter((c) => c.usuario_id === u.id).length,
       }))];
   }],
@@ -616,14 +728,24 @@ const rotas = [
     if (erro) falhar(400, erro);
     const perfil = corpo.perfil || "comum";
     if (!PERFIS.includes(perfil)) falhar(400, `Perfil inválido. Use: ${PERFIS.join(", ")}.`);
+    const dados = validarDadosOpcionais(corpo, DADOS_FUNCIONARIO);
     const email = texto(corpo.email).toLowerCase();
     if (banco().usuarios.some((u) => u.email === email)) falhar(409, "Este e-mail já está cadastrado.");
     const usuario = {
       id: proximoId("usuarios"), nome: texto(corpo.nome), email, perfil,
+      setor: null, cargo: null, ramal: null, localizacao: null, ...dados,
       ativo: true, senha: corpo.senha, createdAt: agora(),
     };
     banco().usuarios.push(usuario);
-    return [201, { ...publico(usuario), ativo: true, createdAt: usuario.createdAt, total_chamados: 0 }];
+    return [201, { ...completoUsuario(usuario), total_chamados: 0 }];
+  }],
+
+  ["PUT", /^\/usuarios\/([^/]+)$/, ({ eu, m, corpo }) => {
+    exigirPerfil(eu, "admin");
+    const usuario = usuarioPorId(Number(m[1]));
+    if (!usuario) falhar(404, "Usuário não encontrado.");
+    Object.assign(usuario, validarDadosOpcionais(corpo, DADOS_FUNCIONARIO));
+    return [200, completoUsuario(usuario)];
   }],
 
   ["PUT", /^\/usuarios\/([^/]+)\/perfil$/, ({ eu, m, corpo }) => {
@@ -635,7 +757,7 @@ const rotas = [
     usuario.perfil = corpo.perfil;
     // Quem deixa a equipe sai também dos grupos técnicos
     if (!isEquipe(usuario)) definirGruposDoUsuario(usuario.id, []);
-    return [200, { ...publico(usuario), ativo: usuario.ativo, createdAt: usuario.createdAt }];
+    return [200, completoUsuario(usuario)];
   }],
 
   ["PUT", /^\/usuarios\/([^/]+)\/status$/, ({ eu, m, corpo }) => {
@@ -645,7 +767,7 @@ const rotas = [
     if (!usuario) falhar(404, "Usuário não encontrado.");
     if (usuario.id === eu.id && !corpo.ativo) falhar(400, "Você não pode desativar a sua própria conta.");
     usuario.ativo = corpo.ativo;
-    return [200, { ...publico(usuario), ativo: usuario.ativo, createdAt: usuario.createdAt }];
+    return [200, completoUsuario(usuario)];
   }],
 ];
 
@@ -696,6 +818,9 @@ function validarCategoria(corpo, { ehSubcategoria, atual }) {
     }
     dados.grupo_id = corpo.grupo_id;
   }
+  if (corpo.palavras_chave !== undefined) {
+    dados.palavras_chave = validarLista(corpo.palavras_chave, { max: LIMITES.palavras, maxItem: LIMITES.palavra, nome: "palavras_chave" });
+  }
   if (!ehSubcategoria) {
     if (corpo.icone !== undefined) {
       if (!ICONES.includes(corpo.icone)) falhar(400, `Ícone inválido. Use: ${ICONES.join(", ")}.`);
@@ -714,6 +839,16 @@ function validarCategoria(corpo, { ehSubcategoria, atual }) {
   if (resposta > solucao) falhar(400, "O prazo de resposta não pode ser maior que o de solução.");
   dados.sla_resposta_horas = resposta;
   dados.sla_solucao_horas = solucao;
+  if (corpo.sugestoes !== undefined) {
+    dados.sugestoes = validarLista(corpo.sugestoes, { max: LIMITES.sugestoes, maxItem: LIMITES.sugestao, nome: "sugestoes" });
+  }
+  if (corpo.modelo_descricao !== undefined) {
+    if (corpo.modelo_descricao !== null && typeof corpo.modelo_descricao !== "string") falhar(400, 'Informe "modelo_descricao" como texto.');
+    const modelo = (corpo.modelo_descricao || "").trim();
+    if (modelo.length > LIMITES.modelo) falhar(400, `O modelo de descrição deve ter no máximo ${LIMITES.modelo} caracteres.`);
+    dados.modelo_descricao = modelo || null;
+  }
+  if (corpo.campos !== undefined) dados.campos = validarCampos(corpo.campos);
   return dados;
 }
 

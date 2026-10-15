@@ -19,7 +19,7 @@ function criarClienteReal() {
   const conexao = require('../../src/database');
   const Sequelize = require('sequelize');
   const seeder = require('../../src/database/seeders/20251005220000-demo-data');
-  const { inserirCatalogoPadrao } = require('../../src/database/catalogoPadrao');
+  const { inserirCatalogoPadrao, aplicarDetalhesCatalogo } = require('../../src/database/catalogoPadrao');
 
   return {
     nome: 'API real',
@@ -37,6 +37,7 @@ function criarClienteReal() {
         await conexao.query(`ALTER TABLE ${tabela} AUTO_INCREMENT = 1`);
       }
       await inserirCatalogoPadrao(conexao.getQueryInterface());
+      await aplicarDetalhesCatalogo(conexao.getQueryInterface());
       await seeder.up(conexao.getQueryInterface(), Sequelize);
     },
 

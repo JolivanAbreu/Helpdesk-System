@@ -69,6 +69,153 @@ const CATALOGO = [
   },
 ];
 
+// Detalhes do formulário de cada subcategoria ("Categoria › Subcategoria"):
+// - palavras: termos e sinônimos que a busca inteligente reconhece
+// - sugestoes: títulos comuns, oferecidos ao preencher o assunto
+// - modelo: roteiro para a descrição (vazio = modelo genérico)
+// - campos: perguntas específicas (tipo texto, numero ou selecao)
+const sel = (rotulo, opcoes, extra = {}) => ({ rotulo, tipo: 'selecao', opcoes, obrigatorio: true, ...extra });
+const txt = (rotulo, extra = {}) => ({ rotulo, tipo: 'texto', obrigatorio: false, ...extra });
+
+const DETALHES_CATALOGO = {
+  'Hardware › Computador ou notebook': {
+    palavras: ['pc', 'computador', 'notebook', 'maquina', 'desktop', 'cpu', 'lento', 'travando', 'nao liga', 'tela azul', 'reiniciando', 'bateria', 'carregador', 'barulho'],
+    sugestoes: ['Computador não liga', 'Computador muito lento', 'Computador reiniciando sozinho', 'Notebook não carrega a bateria'],
+    campos: [
+      sel('Tipo de equipamento', ['Desktop', 'Notebook']),
+      sel('O que está acontecendo', ['Não liga', 'Lento ou travando', 'Reinicia sozinho', 'Tela azul', 'Outro']),
+      txt('Número de patrimônio', { ajuda: 'Etiqueta colada no equipamento, se houver' }),
+    ],
+  },
+  'Hardware › Impressora': {
+    palavras: ['impressora', 'imprimir', 'impressao', 'toner', 'papel', 'atolado', 'atolando', 'scanner', 'digitalizar', 'xerox', 'copiadora', 'cartucho'],
+    sugestoes: ['Impressora não imprime', 'Impressora atolando papel', 'Toner da impressora acabou', 'Scanner não digitaliza'],
+    campos: [
+      txt('Qual impressora', { obrigatorio: true, ajuda: 'Modelo ou onde ela fica. Ex.: HP do 2º andar' }),
+      sel('Problema', ['Não imprime', 'Atolando papel', 'Sem toner', 'Impressão falhada ou manchada', 'Scanner', 'Outro']),
+    ],
+  },
+  'Hardware › Monitor e vídeo': {
+    palavras: ['monitor', 'tela', 'video', 'imagem', 'hdmi', 'piscando', 'sem sinal', 'segunda tela', 'projetor', 'resolucao'],
+    sugestoes: ['Monitor sem sinal', 'Monitor piscando', 'Segunda tela não é reconhecida'],
+    campos: [txt('Número de patrimônio', { ajuda: 'Etiqueta colada no monitor, se houver' })],
+  },
+  'Hardware › Teclado, mouse e webcam': {
+    palavras: ['teclado', 'mouse', 'webcam', 'camera', 'headset', 'fone', 'microfone', 'periferico', 'tecla', 'audio', 'som'],
+    sugestoes: ['Mouse parou de funcionar', 'Teclado com teclas falhando', 'Webcam não funciona nas reuniões', 'Headset sem áudio'],
+    campos: [sel('Equipamento', ['Teclado', 'Mouse', 'Webcam', 'Headset ou fone', 'Outro'])],
+  },
+  'Hardware › Outros': {
+    palavras: ['equipamento', 'hardware', 'peca', 'cabo', 'estabilizador', 'nobreak'],
+    sugestoes: ['Solicitação de equipamento', 'Problema em equipamento'],
+  },
+  'Software e sistemas › Sistema fora do ar': {
+    palavras: ['sistema', 'fora do ar', 'erp', 'caiu', 'indisponivel', 'erro 503', 'nao abre', 'nao carrega', 'ponto', 'intranet', 'totvs', 'sap'],
+    sugestoes: ['ERP fora do ar', 'Sistema não abre', 'Erro ao entrar no sistema', 'Sistema de ponto indisponível'],
+    modelo: 'Mensagem de erro exibida:\n\nHorário em que começou:\n\nO que você estava fazendo:\n',
+    campos: [
+      sel('Sistema', ['ERP', 'Sistema de ponto', 'Intranet', 'Outro']),
+      sel('Quem está sem acesso', ['Só eu', 'Meu setor', 'Vários setores']),
+      txt('Mensagem de erro', { ajuda: 'Copie o texto da tela, se houver' }),
+    ],
+  },
+  'Software e sistemas › Backup e servidores': {
+    palavras: ['backup', 'servidor', 'rotina', 'restaurar', 'arquivo apagado', 'recuperar', 'pasta de rede', 'storage', 'versao anterior'],
+    sugestoes: ['Recuperar arquivo apagado da rede', 'Falha na rotina de backup', 'Servidor de arquivos inacessível'],
+    campos: [txt('Pasta ou servidor', { ajuda: 'Ex.: \\\\servidor\\financeiro' })],
+  },
+  'Software e sistemas › Antivírus e segurança': {
+    palavras: ['virus', 'antivirus', 'malware', 'phishing', 'email suspeito', 'link suspeito', 'quarentena', 'bloqueado', 'ransomware', 'invasao', 'golpe', 'hacker'],
+    sugestoes: ['Recebi um e-mail suspeito', 'Antivírus bloqueando programa', 'Computador com vírus'],
+    modelo: 'Remetente, site ou programa suspeito:\n\nO que você fez (clicou, baixou, digitou senha):\n\nQuando aconteceu:\n',
+    campos: [sel('Você clicou em algum link ou abriu anexo?', ['Sim', 'Não', 'Não sei'])],
+  },
+  'Software e sistemas › Licenças': {
+    palavras: ['licenca', 'office', 'word', 'excel', 'powerpoint', 'ativacao', 'expirada', 'somente leitura', 'chave', 'adobe', 'acrobat'],
+    sugestoes: ['Licença do Office expirada', 'Programa pedindo ativação', 'Word em modo somente leitura'],
+    campos: [txt('Programa', { obrigatorio: true, ajuda: 'Ex.: Microsoft Office, Adobe Acrobat' })],
+  },
+  'Software e sistemas › Instalação de programa': {
+    palavras: ['instalar', 'instalacao', 'programa', 'software', 'aplicativo', 'power bi', 'baixar', 'download', 'atualizar', 'atualizacao'],
+    sugestoes: ['Instalação de programa', 'Atualizar programa', 'Instalação do Power BI'],
+    campos: [
+      txt('Programa', { obrigatorio: true }),
+      txt('Para que vai usar', { obrigatorio: true, ajuda: 'Ajuda a equipe a aprovar a instalação' }),
+    ],
+  },
+  'Software e sistemas › Outros': {
+    palavras: ['duvida', 'programa', 'configurar', 'erro'],
+    sugestoes: ['Dúvida sobre programa', 'Erro em programa'],
+  },
+  'Rede e internet › Lentidão ou queda de rede': {
+    palavras: ['internet', 'rede', 'lento', 'lentidao', 'caiu', 'sem internet', 'conexao', 'cabo de rede', 'queda', 'oscilando', 'desconectando'],
+    sugestoes: ['Internet lenta', 'Sem acesso à internet', 'Rede caindo várias vezes'],
+    campos: [sel('Onde acontece', ['Só no meu computador', 'No meu setor', 'Na empresa toda'])],
+  },
+  'Rede e internet › VPN': {
+    palavras: ['vpn', 'acesso remoto', 'home office', 'trabalho remoto', 'forticlient', 'conectar de casa', 'certificado'],
+    sugestoes: ['Não consigo conectar na VPN', 'VPN desconectando', 'Acesso remoto ao computador do escritório'],
+    campos: [sel('De onde você está conectando', ['Casa', 'Outra unidade', 'Viagem'], { obrigatorio: false })],
+  },
+  'Rede e internet › Telefone IP': {
+    palavras: ['telefone', 'ramal', 'ligacao', 'mudo', 'sem sinal', 'voip', 'aparelho', 'chamada', 'transferir ligacao'],
+    sugestoes: ['Telefone sem sinal', 'Ramal não recebe ligações', 'Configurar ramal na nova mesa'],
+    campos: [txt('Ramal com problema', { obrigatorio: true })],
+  },
+  'Rede e internet › Wi-Fi': {
+    palavras: ['wifi', 'wireless', 'sem fio', 'sinal fraco', 'senha do wifi', 'visitantes', 'roteador'],
+    sugestoes: ['Wi-Fi sem sinal', 'Senha do Wi-Fi de visitantes', 'Wi-Fi caindo'],
+    campos: [sel('Rede', ['Corporativa', 'Visitantes'], { obrigatorio: false })],
+  },
+  'Rede e internet › Outros': {
+    palavras: ['rede', 'ponto de rede', 'switch', 'cabeamento'],
+    sugestoes: ['Instalar ponto de rede', 'Problema de rede'],
+  },
+  'Acessos e senhas › Redefinir senha': {
+    palavras: ['senha', 'esqueci', 'bloqueado', 'bloqueada', 'expirada', 'resetar', 'redefinir', 'desbloquear', 'conta', 'login', 'trocar senha'],
+    sugestoes: ['Redefinir senha de rede', 'Conta bloqueada', 'Senha expirada'],
+    campos: [
+      sel('Senha de qual sistema', ['Rede/Windows', 'E-mail', 'ERP', 'Outro']),
+      txt('Usuário de login', { ajuda: 'Se for diferente do seu e-mail' }),
+    ],
+  },
+  'Acessos e senhas › Permissão em pasta ou sistema': {
+    palavras: ['permissao', 'acesso', 'pasta', 'compartilhada', 'liberar', 'acesso negado', 'autorizacao', 'perfil de acesso'],
+    sugestoes: ['Acesso à pasta compartilhada', 'Liberar acesso ao sistema', 'Acesso negado em pasta'],
+    campos: [
+      txt('Pasta ou sistema', { obrigatorio: true }),
+      sel('Tipo de acesso', ['Somente leitura', 'Leitura e escrita']),
+      txt('Gestor que aprova', { ajuda: 'Quem autoriza o acesso' }),
+    ],
+  },
+  'Acessos e senhas › Criar ou desativar usuário': {
+    palavras: ['novo colaborador', 'admissao', 'contratacao', 'desligamento', 'demissao', 'criar usuario', 'desativar usuario', 'conta nova', 'onboarding'],
+    sugestoes: ['Criar usuário para novo colaborador', 'Desativar usuário de colaborador desligado'],
+    campos: [
+      sel('Ação', ['Criar usuário', 'Desativar usuário']),
+      txt('Nome do colaborador', { obrigatorio: true }),
+      txt('Data de início ou desligamento'),
+    ],
+  },
+  'Acessos e senhas › Outros': {
+    palavras: ['acesso', 'usuario', 'cracha', 'biometria'],
+    sugestoes: ['Problema de acesso'],
+  },
+  'E-mail › Configuração de e-mail': {
+    palavras: ['email', 'outlook', 'caixa de entrada', 'sincronizar', 'sincroniza', 'celular', 'assinatura', 'nao recebe', 'nao envia', 'spam', 'caixa cheia', 'webmail'],
+    sugestoes: ['Outlook não sincroniza', 'Não estou recebendo e-mails', 'Caixa de e-mail cheia', 'Configurar e-mail no celular'],
+    campos: [sel('Onde', ['Computador (Outlook)', 'Celular', 'Webmail'], { obrigatorio: false })],
+  },
+  'E-mail › Outros': {
+    palavras: ['email', 'lista de distribuicao', 'grupo de email', 'calendario'],
+    sugestoes: ['Criar lista de e-mail', 'Problema no calendário do Outlook'],
+  },
+  'Outros › Outros assuntos': {
+    palavras: ['duvida', 'outro', 'ajuda', 'solicitacao'],
+    sugestoes: ['Dúvida geral', 'Solicitação diversa'],
+  },
+};
+
 // Categoria antiga (texto) -> subcategoria nova, usado na conversão de dados
 const CONVERSAO_CATEGORIA_ANTIGA = {
   hardware: 'Hardware › Outros',
@@ -129,4 +276,31 @@ async function inserirCatalogoPadrao(queryInterface) {
   return { grupos, subcategorias };
 }
 
-module.exports = { GRUPOS, CATALOGO, CONVERSAO_CATEGORIA_ANTIGA, inserirCatalogoPadrao };
+// Grava os detalhes do formulário nas subcategorias de fábrica (pelo nome).
+// Fica separado de inserirCatalogoPadrao porque as colunas vêm de uma
+// migration posterior.
+async function aplicarDetalhesCatalogo(queryInterface) {
+  const { chaveDoCampo } = require('../services/formulario');
+  for (const [caminho, d] of Object.entries(DETALHES_CATALOGO)) {
+    const [pai, sub] = caminho.split(' › ');
+    const campos = (d.campos || []).map((c) => ({ chave: chaveDoCampo(c.rotulo), ajuda: null, opcoes: [], ...c }));
+    await queryInterface.sequelize.query(
+      `UPDATE categorias s JOIN categorias p ON p.id = s.parent_id
+          SET s.palavras_chave = :palavras, s.sugestoes = :sugestoes, s.modelo_descricao = :modelo, s.campos = :campos
+        WHERE p.nome = :pai AND s.nome = :sub`,
+      {
+        replacements: {
+          pai, sub,
+          palavras: JSON.stringify(d.palavras || []),
+          sugestoes: JSON.stringify(d.sugestoes || []),
+          modelo: d.modelo || null,
+          campos: JSON.stringify(campos),
+        },
+      }
+    );
+  }
+}
+
+module.exports = {
+  GRUPOS, CATALOGO, DETALHES_CATALOGO, CONVERSAO_CATEGORIA_ANTIGA, inserirCatalogoPadrao, aplicarDetalhesCatalogo,
+};

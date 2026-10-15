@@ -7,11 +7,15 @@ const Categoria = require('../models/Categoria');
 const Grupo = require('../models/Grupo');
 const { PRIORIDADES, METAS_SLA } = require('../config/perfis');
 const { texto } = require('../utils/validacao');
+const { LIMITES, validarLista, validarCampos } = require('../services/formulario');
 
 const ICONES = ['hardware', 'software', 'rede', 'acessos', 'email', 'outros'];
 const HORAS_MAX = 2000;
 
-const ATRIBUTOS = ['id', 'nome', 'descricao', 'icone', 'parent_id', 'prioridade', 'sla_resposta_horas', 'sla_solucao_horas', 'grupo_id', 'ativo'];
+const ATRIBUTOS = [
+  'id', 'nome', 'descricao', 'icone', 'parent_id', 'prioridade', 'sla_resposta_horas', 'sla_solucao_horas', 'grupo_id', 'ativo',
+  'palavras_chave', 'sugestoes', 'modelo_descricao', 'campos',
+];
 
 // Ordem alfabética, com os itens "Outros..." sempre no fim
 const ordenar = (lista) => lista.sort((a, b) => (
@@ -70,6 +74,13 @@ async function validar(corpo, { ehSubcategoria, atual }) {
     dados.grupo_id = corpo.grupo_id;
   }
 
+  // Palavras-chave ajudam a busca a achar também as categorias principais
+  if (corpo.palavras_chave !== undefined) {
+    const lista = validarLista(corpo.palavras_chave, { max: LIMITES.palavras, maxItem: LIMITES.palavra, nome: 'palavras_chave' });
+    if (lista.erro) return { erro: lista.erro };
+    dados.palavras_chave = lista.valor;
+  }
+
   if (!ehSubcategoria) {
     if (corpo.icone !== undefined) {
       if (!ICONES.includes(corpo.icone)) return { erro: `Ícone inválido. Use: ${ICONES.join(', ')}.` };
@@ -97,6 +108,26 @@ async function validar(corpo, { ehSubcategoria, atual }) {
   }
   dados.sla_resposta_horas = resposta;
   dados.sla_solucao_horas = solucao;
+
+  // Formulário de abertura
+  if (corpo.sugestoes !== undefined) {
+    const lista = validarLista(corpo.sugestoes, { max: LIMITES.sugestoes, maxItem: LIMITES.sugestao, nome: 'sugestoes' });
+    if (lista.erro) return { erro: lista.erro };
+    dados.sugestoes = lista.valor;
+  }
+  if (corpo.modelo_descricao !== undefined) {
+    if (corpo.modelo_descricao !== null && typeof corpo.modelo_descricao !== 'string') {
+      return { erro: 'Informe "modelo_descricao" como texto.' };
+    }
+    const modelo = (corpo.modelo_descricao || '').trim();
+    if (modelo.length > LIMITES.modelo) return { erro: `O modelo de descrição deve ter no máximo ${LIMITES.modelo} caracteres.` };
+    dados.modelo_descricao = modelo || null;
+  }
+  if (corpo.campos !== undefined) {
+    const campos = validarCampos(corpo.campos);
+    if (campos.erro) return { erro: campos.erro };
+    dados.campos = campos.valor;
+  }
 
   return { dados };
 }
