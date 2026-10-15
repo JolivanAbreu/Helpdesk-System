@@ -7,6 +7,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Chamados from "./pages/Chamados";
 import ChamadoDetalhe from "./pages/ChamadoDetalhe";
+import CentralServicos from "./pages/CentralServicos";
+import AbrirChamado from "./pages/AbrirChamado";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
 import AppLayout from "./components/layout/AppLayout";
@@ -34,6 +36,8 @@ function App() {
           {/* Rotas que exigem login, dentro do layout com barra lateral */}
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
+              <Route path="/abrir" element={<CentralServicos />} />
+              <Route path="/abrir/:subcategoriaId" element={<AbrirChamado />} />
               <Route path="/chamados" element={<Chamados />} />
               <Route path="/chamado/:id" element={<ChamadoDetalhe />} />
               <Route element={<AdminRoute />}>

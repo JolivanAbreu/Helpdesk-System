@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import {
   ArrowLeft, Send, Paperclip, FileText, Image as ImageIcon, Download, UploadCloud,
   UserCheck, SignalHigh, RefreshCw, CheckCircle2, RotateCcw, Lock, Tag, MessageSquare,
-  ArrowRightLeft, Users,
+  ArrowRightLeft, Users, Phone, MapPin,
 } from "lucide-react";
 import api, { isEquipe, mensagemDeErro, DEMO_LOCAL } from "../services/api";
 import { STATUS, LISTA_STATUS, PRIORIDADES, LISTA_PRIORIDADES, iconeCategoria } from "../config/dominio";
@@ -119,6 +119,16 @@ export default function ChamadoDetalhe() {
                   </time>
                 </p>
                 <p className="mt-2 whitespace-pre-wrap leading-relaxed text-marinho">{chamado.descricao}</p>
+                {chamado.respostas?.length > 0 && (
+                  <dl className="mt-4 grid gap-x-6 gap-y-2.5 rounded-md border border-borda bg-nevoa/50 px-4 py-3 text-sm sm:grid-cols-2" aria-label="Respostas do formulário">
+                    {chamado.respostas.map((r) => (
+                      <div key={r.chave} className="min-w-0">
+                        <dt className="text-xs text-aco">{r.rotulo}</dt>
+                        <dd className="break-words font-medium">{r.valor}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
               </div>
             </li>
 
@@ -306,7 +316,26 @@ export default function ChamadoDetalhe() {
               </Propriedade>
 
               <Propriedade rotulo="Solicitante">
-                <Pessoa nome={chamado.usuario?.nome ?? "Usuário removido"} detalhe={chamado.usuario?.email} />
+                <Pessoa
+                  nome={chamado.usuario?.nome ?? "Usuário removido"}
+                  detalhe={[chamado.usuario?.setor, chamado.usuario?.cargo].filter(Boolean).join(" · ") || chamado.usuario?.email}
+                />
+                {(chamado.contato || chamado.local) && (
+                  <dl className="mt-3 space-y-1.5 text-sm">
+                    {chamado.contato && (
+                      <div className="flex items-center gap-2">
+                        <dt><Phone className="h-3.5 w-3.5 text-aco" aria-label="Contato" /></dt>
+                        <dd className="num">{chamado.contato}</dd>
+                      </div>
+                    )}
+                    {chamado.local && (
+                      <div className="flex items-center gap-2">
+                        <dt><MapPin className="h-3.5 w-3.5 text-aco" aria-label="Local do atendimento" /></dt>
+                        <dd>{chamado.local}</dd>
+                      </div>
+                    )}
+                  </dl>
+                )}
               </Propriedade>
 
               <div className="grid grid-cols-2 gap-4 border-t border-borda pt-5">

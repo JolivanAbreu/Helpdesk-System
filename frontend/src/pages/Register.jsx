@@ -24,7 +24,7 @@ export default function Register() {
       localStorage.setItem(TOKEN_KEY, data.token);
       localStorage.setItem(USER_KEY, JSON.stringify(data.usuario));
       toast.success("Conta criada.");
-      navigate("/chamados");
+      navigate("/abrir");
     } catch (error) {
       toast.error(mensagemDeErro(error, "Não foi possível criar a conta."));
       setEnviando(false);

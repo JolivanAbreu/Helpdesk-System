@@ -7,7 +7,8 @@ const BOTAO_DA_CONTA = { colaborador: "Colaborador", suporte: "Suporte", admin: 
 export async function entrarComo(page, perfil) {
   await page.goto("/");
   await page.getByRole("button", { name: new RegExp(`^${BOTAO_DA_CONTA[perfil]}`) }).click();
-  await expect(page).toHaveURL(/\/chamados/);
+  // Colaborador começa pela Central de Serviços; a equipe, pela fila
+  await expect(page).toHaveURL(perfil === "colaborador" ? /\/abrir$/ : /\/chamados/);
   await expect(page.locator("main ul > li").first()).toBeVisible();
 }
 

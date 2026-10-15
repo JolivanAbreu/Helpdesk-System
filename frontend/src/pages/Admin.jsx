@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { UserPlus, Search, Users, CircleCheck } from "lucide-react";
+import { UserPlus, Search, Users, CircleCheck, Pencil } from "lucide-react";
 import api, { mensagemDeErro } from "../services/api";
 import { PERFIS, LISTA_PERFIS, PRIORIDADES, LISTA_PRIORIDADES, iconeCategoria } from "../config/dominio";
 import { codigoChamado, tempoRelativo, duracaoHoras, dataCurta } from "../utils/formatar";
@@ -14,7 +14,7 @@ import { Avatar, PrioridadeSelo, StatusSelo } from "../components/ui/Selos";
 import { Esqueleto, Vazio } from "../components/ui/Estados";
 import GraficoPorDia from "../components/admin/GraficoPorDia";
 import { PrazoTexto } from "../components/ui/Prazo";
-import NovoUsuarioModal from "../components/NovoUsuarioModal";
+import NovoUsuarioModal, { DadosFuncionarioModal } from "../components/NovoUsuarioModal";
 import GestaoCatalogo from "../components/admin/GestaoCatalogo";
 import GestaoGrupos from "../components/admin/GestaoGrupos";
 
@@ -322,6 +322,7 @@ function GestaoUsuarios() {
   const [novoAberto, setNovoAberto] = useState(false);
   const [salvandoId, setSalvandoId] = useState(null);
   const [confirmar, setConfirmar] = useState(null); // usuário a desativar
+  const [editando, setEditando] = useState(null); // usuário com os dados em edição
 
   const carregar = useCallback(() => {
     api.get("/usuarios")
@@ -335,7 +336,7 @@ function GestaoUsuarios() {
     return (usuarios ?? []).filter((u) =>
       (!filtroPerfil || u.perfil === filtroPerfil) &&
       (!filtroSituacao || (filtroSituacao === "ativos" ? u.ativo : !u.ativo)) &&
-      (!termo || `${u.nome} ${u.email}`.toLowerCase().includes(termo))
+      (!termo || `${u.nome} ${u.email} ${u.setor ?? ""} ${u.cargo ?? ""}`.toLowerCase().includes(termo))
     );
   }, [usuarios, busca, filtroPerfil, filtroSituacao]);
 
@@ -374,7 +375,7 @@ function GestaoUsuarios() {
       <div className="flex flex-wrap items-center gap-3 p-5">
         <div className="relative min-w-[220px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-aco" aria-hidden="true" />
-          <Input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou e-mail" aria-label="Buscar usuários" className="pl-9" />
+          <Input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, e-mail ou setor" aria-label="Buscar usuários" className="pl-9" />
         </div>
         <Select value={filtroPerfil} onChange={(e) => setFiltroPerfil(e.target.value)} aria-label="Filtrar por perfil" className="w-auto">
           <option value="">Todos os perfis</option>
@@ -419,6 +420,9 @@ function GestaoUsuarios() {
                             {souEu && <span className="ml-2 text-xs font-normal text-aco">você</span>}
                           </span>
                           <span className="block text-xs text-aco">{u.email}</span>
+                          {(u.setor || u.cargo) && (
+                            <span className="block text-xs text-aco">{[u.setor, u.cargo].filter(Boolean).join(" · ")}</span>
+                          )}
                         </span>
                       </span>
                     </td>
@@ -442,7 +446,16 @@ function GestaoUsuarios() {
                         {u.ativo ? "Ativo" : "Desativado"}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-right">
+                    <td className="whitespace-nowrap px-5 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setEditando(u)}
+                        className="mr-2 rounded p-1.5 align-middle text-aco hover:bg-nevoa hover:text-marinho focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-azul"
+                        aria-label={`Editar dados de ${u.nome}`}
+                        title="Setor, cargo, ramal e localização"
+                      >
+                        <Pencil className="h-4 w-4" aria-hidden="true" />
+                      </button>
                       {!souEu && (u.ativo ? (
                         <Button variante="perigo" tamanho="sm" onClick={() => setConfirmar(u)}>Desativar</Button>
                       ) : (
@@ -466,6 +479,14 @@ function GestaoUsuarios() {
             setNovoAberto(false);
             setUsuarios((lista) => [...lista, novo].sort((a, b) => a.nome.localeCompare(b.nome)));
           }}
+        />
+      )}
+
+      {editando && (
+        <DadosFuncionarioModal
+          usuario={editando}
+          onFechar={() => setEditando(null)}
+          onSalvo={(atualizado) => { substituir(atualizado); setEditando(null); }}
         />
       )}
 

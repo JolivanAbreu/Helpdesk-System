@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { entrarComo, aviso, escolher } from "./apoio";
+import { entrarComo, aviso } from "./apoio";
 
 test.describe("Administração", () => {
   test.beforeEach(async ({ page }) => {
@@ -44,12 +44,15 @@ test.describe("Administração", () => {
     await expect(linha).toContainText("Crítica");
     await expect(linha).toContainText("30 min");
 
+    // O formulário da subcategoria já mostra os prazos novos
     await page.keyboard.press("n");
-    const novo = page.getByRole("dialog", { name: "Novo chamado" });
-    await escolher(novo, /^Hardware/);
-    await escolher(novo, /^Monitor e vídeo/);
-    await expect(novo).toContainText("Resposta em até 30 min");
-    await expect(novo).toContainText("solução em até 3 h");
+    await expect(page).toHaveURL(/\/abrir$/);
+    await page.getByRole("button", { name: /^Hardware/ }).click();
+    await page.getByRole("dialog", { name: "Hardware" }).getByRole("button", { name: /^Monitor e vídeo/ }).click();
+    const resumo = page.getByRole("region", { name: "Resumo do atendimento" });
+    await expect(resumo).toContainText("Crítica");
+    await expect(resumo).toContainText("até 30 min");
+    await expect(resumo).toContainText("até 3 h");
   });
 
   test("cria um grupo técnico com membros", async ({ page }) => {

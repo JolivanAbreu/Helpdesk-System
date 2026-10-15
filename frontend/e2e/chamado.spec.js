@@ -1,52 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { entrarComo, aviso, mensagemNaConversa, escolher } from "./apoio";
+import { entrarComo, aviso, mensagemNaConversa } from "./apoio";
 
 const conversa = (page) => page.getByRole("region", { name: "Conversa" });
 
 test.describe("Chamado", () => {
-  test("colaborador abre pelo atalho N e a subcategoria define prioridade, prazos e grupo", async ({ page }) => {
-    await entrarComo(page, "colaborador");
-    await page.keyboard.press("n");
-
-    const janela = page.getByRole("dialog", { name: "Novo chamado" });
-    await janela.getByLabel("Assunto", { exact: true }).fill("Notebook não carrega");
-    await escolher(janela, /^Hardware/);
-    await escolher(janela, /^Computador ou notebook/);
-    await expect(janela).toContainText("Resposta em até 2 h");
-    await expect(janela).toContainText("solução em até 8 h");
-    await expect(janela).toContainText("Service Desk (N1)");
-    await expect(janela.getByText("Quanto isso afeta você?")).toHaveCount(0);
-    await janela.getByLabel("Descrição").fill("A bateria não carrega mesmo na tomada.");
-    await janela.getByRole("button", { name: "Abrir chamado" }).click();
-
-    await expect(page).toHaveURL(/\/chamado\/18$/);
-    await expect(page.getByRole("heading", { name: "Notebook não carrega" })).toBeVisible();
-    const detalhes = page.getByRole("region", { name: "Detalhes do chamado" });
-    await expect(detalhes).toContainText("Alta");
-    await expect(detalhes).toContainText("Hardware › Computador ou notebook");
-    await expect(detalhes).toContainText("Service Desk (N1)");
-  });
-
-  test("só dá para abrir depois de escolher o tipo de problema", async ({ page }) => {
-    await entrarComo(page, "colaborador");
-    await page.keyboard.press("n");
-    const janela = page.getByRole("dialog", { name: "Novo chamado" });
-    await janela.getByLabel("Assunto", { exact: true }).fill("Sem categoria");
-    await janela.getByLabel("Descrição").fill("Teste");
-    const abrir = janela.getByRole("button", { name: "Abrir chamado" });
-    await expect(abrir).toBeDisabled();
-
-    await escolher(janela, /^Rede e internet/);
-    await expect(abrir).toBeDisabled();
-    await escolher(janela, /^VPN/);
-    await expect(abrir).toBeEnabled();
-
-    // Categoria com uma única opção já vem escolhida
-    await escolher(janela, /^Outros\s*Qualquer outro assunto/);
-    await expect(janela.getByRole("radio", { name: /^Outros assuntos/ })).toBeChecked();
-    await expect(abrir).toBeEnabled();
-  });
-
   test("mostra os prazos de resposta e de solução", async ({ page }) => {
     await entrarComo(page, "suporte");
     await page.goto("/chamado/3");
@@ -107,14 +64,6 @@ test.describe("Chamado", () => {
     await expect(conversa(page)).toBeVisible();
     await expect(mensagemNaConversa(page, "Certificado vence amanhã")).toHaveCount(0);
     await expect(page.getByRole("radio", { name: "Nota interna" })).toHaveCount(0);
-  });
-
-  test("Esc fecha a janela de novo chamado", async ({ page }) => {
-    await entrarComo(page, "colaborador");
-    await page.keyboard.press("n");
-    await expect(page.getByRole("dialog")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
   test("suporte altera prioridade e responsável, e a timeline registra tudo", async ({ page }) => {

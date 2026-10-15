@@ -1,13 +1,12 @@
 // src/components/layout/AppLayout.jsx
 import React, { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Inbox, UserCheck, ShieldCheck, LogOut, Menu, Plus, X } from "lucide-react";
+import { Inbox, UserCheck, ShieldCheck, LogOut, Menu, Plus, X, LayoutGrid } from "lucide-react";
 import api, { TOKEN_KEY, USER_KEY, DEMO_LOCAL, usuarioLogado, isEquipe } from "../../services/api";
 import { PERFIS } from "../../config/dominio";
 import Logo from "../ui/Logo";
 import Button from "../ui/Button";
 import { Avatar, Contador } from "../ui/Selos";
-import NovoChamadoModal from "../NovoChamadoModal";
 import AvisoDemo from "../AvisoDemo";
 
 // Estrutura das páginas logadas: barra lateral + conteúdo.
@@ -18,7 +17,6 @@ export default function AppLayout() {
   const [user, setUser] = useState(usuarioLogado());
   const [contadores, setContadores] = useState(null);
   const [menuAberto, setMenuAberto] = useState(false);
-  const [novoAberto, setNovoAberto] = useState(false);
   const equipe = isEquipe(user);
 
   // Mantém nome e perfil atualizados (ex.: o admin mudou o perfil do usuário)
@@ -47,12 +45,12 @@ export default function AppLayout() {
       const digitando = e.target.closest("input, textarea, select, [contenteditable]");
       if (e.key.toLowerCase() === "n" && !digitando && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        setNovoAberto(true);
+        navigate("/abrir");
       }
     }
     document.addEventListener("keydown", aoTeclar);
     return () => document.removeEventListener("keydown", aoTeclar);
-  }, []);
+  }, [navigate]);
 
   function sair() {
     localStorage.removeItem(TOKEN_KEY);
@@ -65,7 +63,7 @@ export default function AppLayout() {
       user={user}
       equipe={equipe}
       contadores={contadores}
-      onNovo={() => setNovoAberto(true)}
+      onNovo={() => navigate("/abrir")}
       onSair={sair}
     />
   );
@@ -107,19 +105,8 @@ export default function AppLayout() {
       {DEMO_LOCAL && <AvisoDemo />}
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
-        <Outlet context={{ user, abrirNovoChamado: () => setNovoAberto(true), atualizarContadores }} />
+        <Outlet context={{ user, abrirNovoChamado: () => navigate("/abrir"), atualizarContadores }} />
       </main>
-
-      {novoAberto && (
-        <NovoChamadoModal
-          onFechar={() => setNovoAberto(false)}
-          onCriado={(chamado) => {
-            setNovoAberto(false);
-            atualizarContadores();
-            navigate(`/chamado/${chamado.id}`);
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -143,6 +130,10 @@ function BarraLateral({ user, equipe, contadores, onNovo, onSair }) {
       </Button>
 
       <nav className="mt-6 space-y-1" aria-label="Principal">
+        <NavLink to="/abrir" className={itemClasse}>
+          <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+          <span className="flex-1">Central de serviços</span>
+        </NavLink>
         <NavLink to="/chamados" end className={(p) => itemClasse({ isActive: p.isActive && !naAbaMinha })}>
           <Inbox className="h-4 w-4" aria-hidden="true" />
           <span className="flex-1">{equipe ? "Fila de chamados" : "Meus chamados"}</span>

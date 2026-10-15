@@ -22,12 +22,23 @@ Nasceu da minha rotina como Analista de Suporte N1: a ideia é reproduzir o cicl
 
 ## ✨ Funcionalidades
 
+**Central de serviços (abertura de chamado)**
+- Página inicial do colaborador com as **categorias em cards**; cada card abre um modal com as **subcategorias em cards**, já mostrando prioridade e prazo
+- **Busca inteligente**: a pessoa descreve o problema com as próprias palavras ("impresora atolada", "esqueci a senha do pc") e recebe os serviços mais prováveis. Ela ignora acentos, entende sinônimos, tolera erro de digitação e dá peso a frases como "fora do ar". Roda no navegador, com testes unitários
+- **Formulário específico** de cada subcategoria:
+  - **Automático**: nome, e-mail, setor e cargo do funcionário; ramal e local também vêm preenchidos, mas podem ser trocados e salvos como padrão
+  - **Do serviço**: categoria, prioridade, prazos e equipe que atende
+  - **Perguntas próprias**: *Impressora* pergunta qual impressora e qual o problema; *Redefinir senha*, o sistema e o login
+- **Sugestões de assunto**: as do catálogo e uma montada a partir das respostas (ex.: "Impressora: atolando papel (HP do 2º andar)"). Também há **modelo de descrição**
+- Aviso de **chamados parecidos já abertos**, para evitar duplicados, e sugestão de **trocar de serviço** quando o assunto combina com outro
+- Anexos já na abertura, e as respostas do formulário aparecem no chamado para a equipe
+
 **Catálogo de serviços e grupos técnicos**
 - Categorias e subcategorias (ex.: *Software › Sistema fora do ar*). Cada subcategoria define **prioridade**, **prazo de resposta**, **prazo de solução** e o **grupo** que recebe o chamado
 - O solicitante não escolhe urgência: escolhe o assunto, e vê na hora a prioridade, os prazos e quem vai atender
 - Grupos técnicos (Service Desk N1, Infraestrutura N2, Sistemas N2), e um técnico pode estar em vários
 - **Transferência** para outro grupo e/ou técnico com **motivo obrigatório**, registrado no histórico: é assim que o N1 escala para o N2
-- O admin edita o catálogo e os grupos pela própria interface
+- O admin edita o catálogo e os grupos pela própria interface, inclusive as perguntas de cada formulário, as palavras-chave da busca, as sugestões de assunto e o modelo de descrição
 
 **Prazos de atendimento (SLA)**
 - Os prazos são **gravados no chamado na abertura**: editar o catálogo depois não muda o histórico de SLA
@@ -90,9 +101,13 @@ Um prazo em aberto fica **no prazo**, **em risco** (a partir de 75% do tempo con
 
 ## 🖼️ Telas
 
-| Novo chamado pelo catálogo | Chamado |
+| Central de serviços | Busca inteligente |
 |---|---|
-| ![Novo chamado](docs/screenshots/novo-chamado.png) | ![Chamado](docs/screenshots/chamado.png) |
+| ![Central de serviços](docs/screenshots/central.png) | ![Busca inteligente](docs/screenshots/busca.png) |
+
+| Formulário de abertura | Chamado |
+|---|---|
+| ![Formulário de abertura](docs/screenshots/novo-chamado.png) | ![Chamado](docs/screenshots/chamado.png) |
 
 | Catálogo de serviços | Login |
 |---|---|
@@ -114,12 +129,12 @@ Helpdesk-System/
 │   │   ├── database/            # Conexão, migrations e seeders (Sequelize)
 │   │   ├── middleware/          # Auth JWT, permissões, acesso ao chamado, erros
 │   │   ├── models/              # Usuario, Chamado, Interacao, Anexo, Categoria, Grupo
-│   │   ├── services/            # Eventos da timeline, cálculo do SLA e consultas do catálogo
+│   │   ├── services/            # Eventos da timeline, SLA, catálogo e validação do formulário
 │   │   └── utils/               # Validação de entrada
 │   └── tests/                   # Contrato (API real + demo) e servidor
 ├── frontend/                    # SPA (React 19 + Vite + Tailwind)
 │   ├── src/
-│   │   ├── pages/               # Login, Register, Chamados, ChamadoDetalhe, Admin
+│   │   ├── pages/               # Login, Register, CentralServicos, AbrirChamado, Chamados, ChamadoDetalhe, Admin
 │   │   ├── components/
 │   │   │   ├── ui/              # Design system: botão, campos, modal, selos, estados
 │   │   │   ├── layout/          # Barra lateral, cabeçalho de página, tela de login
@@ -127,6 +142,7 @@ Helpdesk-System/
 │   │   ├── config/              # Marca (nome do sistema) e rótulos de domínio
 │   │   ├── demo/                # API simulada para a demonstração sem servidor
 │   │   ├── hooks/               # Atualização periódica e catálogo/grupos/equipe em cache
+│   │   ├── utils/               # Formatação e busca inteligente no catálogo (com testes)
 │   │   └── services/api.js      # Axios com token e tratamento de sessão expirada
 │   └── e2e/                     # Testes de interface (Playwright)
 ├── .github/workflows/ci.yml     # CI: testes, lint e build a cada push
@@ -144,9 +160,10 @@ Todas as rotas ficam sob `/api`. "Dono ou equipe" significa o autor do chamado, 
 |---|---|---|---|
 | POST | `/register` | Cria usuário (sempre como `comum`) | Público |
 | POST | `/login` | Autentica e retorna o token | Público |
-| GET | `/me` | Dados do usuário logado | Autenticado |
+| GET | `/me` | Dados do usuário logado, com setor, cargo, ramal e localização | Autenticado |
+| PUT | `/me` | Atualiza o próprio ramal e localização | Autenticado |
 | GET | `/chamados` | Lista com filtros, paginação e contadores ¹ | Autenticado |
-| POST | `/chamados` | Abre um chamado (`titulo`, `descricao`, `categoria_id` da subcategoria) ³ | Autenticado |
+| POST | `/chamados` | Abre um chamado (`titulo`, `descricao`, `categoria_id` da subcategoria, `respostas`, `contato`, `local`) ³ | Autenticado |
 | GET | `/chamados/:id` | Detalhes, timeline e anexos | Dono ou equipe |
 | PUT | `/chamados/:id/status` | Atualiza o status ² | Dono ou equipe |
 | PUT | `/chamados/:id/prioridade` | Altera a prioridade (recalcula os prazos pelas metas) | Equipe |
@@ -166,6 +183,7 @@ Todas as rotas ficam sob `/api`. "Dono ou equipe" significa o autor do chamado, 
 | GET | `/admin/resumo` | Indicadores e dados dos gráficos | Admin |
 | GET | `/usuarios` | Lista usuários, com total de chamados de cada um | Admin |
 | POST | `/usuarios` | Cria usuário já com o perfil escolhido | Admin |
+| PUT | `/usuarios/:id` | Altera setor, cargo, ramal e localização | Admin |
 | PUT | `/usuarios/:id/perfil` | Altera o perfil de um usuário | Admin |
 | PUT | `/usuarios/:id/status` | Ativa ou desativa uma conta (`{ "ativo": false }`) | Admin |
 
@@ -173,7 +191,7 @@ Todas as rotas ficam sob `/api`. "Dono ou equipe" significa o autor do chamado, 
 
 ² O dono com perfil `comum` só pode marcar como `resolvido` ou reabrir (`aberto`). Quem da equipe coloca um chamado sem responsável `em andamento` passa a ser o responsável.
 
-³ A prioridade enviada no corpo é ignorada: ela vem da subcategoria, assim como os prazos e o grupo.
+³ A prioridade enviada no corpo é ignorada: ela vem da subcategoria, assim como os prazos e o grupo. `respostas` é um objeto `{ chave_da_pergunta: valor }`, validado contra as perguntas da subcategoria (obrigatórias, opções e números) e gravado com o rótulo de cada uma. Sem `contato` e `local`, valem o ramal e a localização do cadastro.
 
 Toda mudança de status, prioridade, categoria, responsável ou grupo (transferência, com o motivo) fica registrada como evento na timeline do chamado. Notas internas nunca são enviadas para quem não é da equipe.
 
@@ -181,13 +199,15 @@ Toda mudança de status, prioridade, categoria, responsável ou grupo (transfer�
 
 | Suíte | O que cobre | Como rodar |
 |---|---|---|
-| **Contrato** (Vitest + Supertest) | Cadastro, login, sessão, fila (filtros, busca, ordem, paginação), SLA, catálogo, grupos, transferência, notas internas, status, prioridade, responsável, eventos da timeline, mensagens, anexos, indicadores e gestão de usuários | `cd backend && npm test` |
+| **Contrato** (Vitest + Supertest) | Cadastro, login, sessão, fila (filtros, busca, ordem, paginação), SLA, catálogo, formulário de abertura, grupos, transferência, notas internas, status, prioridade, responsável, eventos da timeline, mensagens, anexos, indicadores e gestão de usuários | `cd backend && npm test` |
 | **Servidor** (Vitest + Supertest) | JSON malformado, cabeçalhos de segurança, CORS, token expirado ou falsificado, senha com hash, nome do arquivo em disco e limite de tentativas de login | (junto com a anterior) |
-| **Interface** (Playwright) | Os fluxos principais no navegador, com os três perfis, incluindo celular e a persistência da demo | `cd frontend && npm run test:e2e` |
+| **Paridade** (Vitest) | Catálogo com formulários, grupos, equipe e dados de exemplo idênticos na API real e na demo | (junto com a anterior) |
+| **Busca inteligente** (Vitest) | Frases reais com erro de digitação, sinônimos e acentos, ranking e sugestões de assunto | `cd frontend && npm test` |
+| **Interface** (Playwright) | Os fluxos principais no navegador, com os três perfis, incluindo a Central de serviços, celular e a persistência da demo | `cd frontend && npm run test:e2e` |
 
 Os **testes de contrato rodam duas vezes**: uma contra a API real (Express + MariaDB) e outra contra a API simulada da demonstração. Assim, se uma regra mudar só de um lado, a suíte acusa a diferença, e a demo do portfólio nunca se comporta diferente do sistema de verdade.
 
-Ao todo são 314 testes de API, com cerca de 98% das linhas cobertas (`npm run test:cobertura`), e 35 testes de interface. O [GitHub Actions](.github/workflows/ci.yml) roda tudo, mais o lint e o build, a cada push.
+Ao todo são 368 testes de API, com cerca de 98% das linhas cobertas (`npm run test:cobertura`), 33 testes da busca e 41 testes de interface. O [GitHub Actions](.github/workflows/ci.yml) roda tudo, mais o lint e o build, a cada push.
 
 **Antes de rodar os testes da API:** deixe o banco de pé (`docker compose up -d`) e instale as dependências do frontend também (`cd frontend && npm install`), porque a suíte importa a API simulada de lá. Os testes usam um banco próprio, o `helpdesk_test`, criado automaticamente: seus dados de desenvolvimento não são tocados.
 
@@ -290,6 +310,7 @@ O nome e a descrição do sistema ficam em `frontend/src/config/marca.js`, e as 
 - [x] Interface corporativa responsiva com design system próprio
 - [x] SLA por prioridade, categorias e notas internas
 - [x] Catálogo de serviços em dois níveis, grupos técnicos (N1/N2) e transferência com motivo
+- [x] Central de serviços com busca inteligente e formulário específico por subcategoria
 - [ ] Migração para TypeScript (com Prisma e Zod)
 - [x] Testes automatizados (API real, demo e interface) com CI no GitHub Actions
 - [x] Demonstração pública na Vercel (API simulada no navegador)

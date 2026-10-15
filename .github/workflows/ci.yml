@@ -65,6 +65,8 @@ jobs:
       - run: npm ci
       - name: Lint
         run: npm run lint
+      - name: Testes unitários (busca inteligente)
+        run: npm test
       - name: Build de produção
         run: npm run build
       - name: Instalar o Chromium do Playwright

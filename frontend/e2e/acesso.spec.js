@@ -34,7 +34,8 @@ test.describe("Acesso", () => {
     await page.getByLabel("E-mail corporativo").fill("visitante@empresa.com");
     await page.getByLabel("Senha", { exact: true }).fill("123456");
     await page.getByRole("button", { name: "Criar conta" }).click();
-    await expect(page.getByRole("heading", { name: "Meus chamados" })).toBeVisible();
+    await expect(page).toHaveURL(/\/abrir$/);
+    await expect(page.getByRole("heading", { name: "Como podemos ajudar, Visitante?" })).toBeVisible();
     await expect(page.getByText("Colaborador", { exact: true })).toBeVisible();
   });
 

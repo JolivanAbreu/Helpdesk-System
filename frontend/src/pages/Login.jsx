@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import api, { TOKEN_KEY, USER_KEY, AVISO_KEY, DEMO_LOCAL, mensagemDeErro } from "../services/api";
+import api, { TOKEN_KEY, USER_KEY, AVISO_KEY, DEMO_LOCAL, mensagemDeErro, isEquipe } from "../services/api";
 import AuthLayout from "../components/layout/AuthLayout";
 import Campo, { Input } from "../components/ui/Campo";
 import Button from "../components/ui/Button";
@@ -37,7 +37,8 @@ export default function Login() {
       const { data } = await api.post("/login", credenciais);
       localStorage.setItem(TOKEN_KEY, data.token);
       localStorage.setItem(USER_KEY, JSON.stringify(data.usuario));
-      navigate("/chamados");
+      // Colaborador começa pela Central de Serviços; a equipe, pela fila
+      navigate(isEquipe(data.usuario) ? "/chamados" : "/abrir");
     } catch (error) {
       toast.error(mensagemDeErro(error, "Não foi possível entrar."));
       setEnviando(false);

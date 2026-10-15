@@ -4,14 +4,14 @@
 // chamados. Mudanças valem só para chamados abertos depois delas.
 import React, { useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Pencil, Users, Info } from "lucide-react";
+import { Plus, Pencil, Users, Info, Trash2, ListChecks } from "lucide-react";
 import api, { mensagemDeErro } from "../../services/api";
 import { PRIORIDADES, LISTA_PRIORIDADES, METAS_SLA, ICONES_CATEGORIA, LISTA_ICONES, iconeCategoria } from "../../config/dominio";
 import { horasDePrazo } from "../../utils/formatar";
 import { useCatalogo, useGrupos } from "../../hooks/useCatalogo";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
-import Campo, { Input, Select } from "../ui/Campo";
+import Campo, { Input, Select, Textarea } from "../ui/Campo";
 import { PrioridadeSelo } from "../ui/Selos";
 import { Esqueleto } from "../ui/Estados";
 
@@ -157,6 +157,14 @@ function CategoriaModal({ item, pai, grupos, onFechar, onSalvo }) {
   const [solucao, setSolucao] = useState(String(item?.sla_solucao_horas ?? METAS_SLA.media.solucao));
   const [grupoId, setGrupoId] = useState(String(item ? item.grupo_id ?? "" : pai?.grupo_id ?? ""));
   const [ativo, setAtivo] = useState(item?.ativo ?? true);
+  // Formulário de abertura (busca inteligente, sugestões e perguntas)
+  const [aba, setAba] = useState("atendimento");
+  const [palavras, setPalavras] = useState((item?.palavras_chave ?? []).join(", "));
+  const [sugestoes, setSugestoes] = useState((item?.sugestoes ?? []).join("\n"));
+  const [modelo, setModelo] = useState(item?.modelo_descricao ?? "");
+  const [campos, setCampos] = useState(() => (item?.campos ?? []).map((c) => ({
+    rotulo: c.rotulo, tipo: c.tipo, obrigatorio: c.obrigatorio, ajuda: c.ajuda ?? "", opcoes: (c.opcoes ?? []).join(", "),
+  })));
   const [salvando, setSalvando] = useState(false);
 
   // Ao criar, os prazos acompanham as metas da prioridade escolhida
@@ -170,11 +178,23 @@ function CategoriaModal({ item, pai, grupos, onFechar, onSalvo }) {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    const lista = (texto, separador) => texto.split(separador).map((v) => v.trim()).filter(Boolean);
     const corpo = {
       nome, descricao, ativo,
       grupo_id: grupoId ? Number(grupoId) : null,
+      palavras_chave: lista(palavras, ","),
       ...(ehSub
-        ? { prioridade, sla_resposta_horas: Number(resposta), sla_solucao_horas: Number(solucao) }
+        ? {
+          prioridade,
+          sla_resposta_horas: Number(resposta),
+          sla_solucao_horas: Number(solucao),
+          sugestoes: lista(sugestoes, "\n"),
+          modelo_descricao: modelo,
+          campos: campos.map((c) => ({
+            rotulo: c.rotulo, tipo: c.tipo, obrigatorio: c.obrigatorio, ajuda: c.ajuda,
+            opcoes: c.tipo === "selecao" ? lista(c.opcoes, ",") : [],
+          })),
+        }
         : { icone }),
       ...(criando && ehSub ? { parent_id: pai.id } : {}),
     };
@@ -194,8 +214,34 @@ function CategoriaModal({ item, pai, grupos, onFechar, onSalvo }) {
   if (ehSub) titulo = criando ? `Nova subcategoria em ${pai.nome}` : "Editar subcategoria";
 
   return (
-    <Modal titulo={titulo} descricao={ehSub && !criando ? `${pai.nome} › ${item.nome}` : undefined} onFechar={onFechar}>
+    <Modal titulo={titulo} descricao={ehSub && !criando ? `${pai.nome} › ${item.nome}` : undefined} onFechar={onFechar} largura={ehSub ? "max-w-2xl" : "max-w-lg"}>
       <form onSubmit={handleSubmit} className="space-y-5">
+        {ehSub && (
+          <div className="flex gap-1 rounded-md bg-nevoa p-1" role="tablist" aria-label="Seções da subcategoria">
+            {[["atendimento", "Atendimento"], ["formulario", `Formulário de abertura (${campos.length})`]].map(([id, rotulo]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={aba === id}
+                onClick={() => setAba(id)}
+                className={`flex-1 rounded px-3 py-1.5 text-sm font-medium transition-colors ${aba === id ? "bg-white text-marinho shadow-painel" : "text-aco hover:text-marinho"}`}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {ehSub && aba === "formulario" ? (
+          <FormularioDeAbertura
+            campos={campos} setCampos={setCampos}
+            palavras={palavras} setPalavras={setPalavras}
+            sugestoes={sugestoes} setSugestoes={setSugestoes}
+            modelo={modelo} setModelo={setModelo}
+          />
+        ) : (
+        <>
         <Campo rotulo="Nome">
           {(p) => <Input {...p} value={nome} onChange={(e) => setNome(e.target.value)} minLength={2} maxLength={100} required />}
         </Campo>
@@ -240,11 +286,19 @@ function CategoriaModal({ item, pai, grupos, onFechar, onSalvo }) {
           )}
         </Campo>
 
+        {!ehSub && (
+          <Campo rotulo="Palavras-chave" ajuda="Separadas por vírgula. Ajudam a busca a encontrar esta categoria.">
+            {(p) => <Input {...p} value={palavras} onChange={(e) => setPalavras(e.target.value)} />}
+          </Campo>
+        )}
+
         {!criando && (
           <label className="flex items-center gap-2.5 text-sm">
             <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} className="h-4 w-4 rounded border-borda accent-azul" />
             Disponível para novos chamados
           </label>
+        )}
+        </>
         )}
 
         <div className="flex justify-end gap-3 pt-1">
@@ -253,5 +307,70 @@ function CategoriaModal({ item, pai, grupos, onFechar, onSalvo }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+const TIPOS = { texto: "Texto", numero: "Número", selecao: "Lista de opções" };
+const MAX_CAMPOS = 8;
+
+// Perguntas, palavras-chave, sugestões de título e modelo de descrição
+function FormularioDeAbertura({ campos, setCampos, palavras, setPalavras, sugestoes, setSugestoes, modelo, setModelo }) {
+  const mudar = (i, dados) => setCampos((lista) => lista.map((c, j) => (j === i ? { ...c, ...dados } : c)));
+  const remover = (i) => setCampos((lista) => lista.filter((_, j) => j !== i));
+  const adicionar = () => setCampos((lista) => [...lista, { rotulo: "", tipo: "texto", obrigatorio: false, ajuda: "", opcoes: "" }]);
+
+  return (
+    <div className="space-y-5">
+      <fieldset>
+        <legend className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-marinho">
+          <ListChecks className="h-4 w-4 text-aco" aria-hidden="true" />
+          Perguntas específicas
+        </legend>
+        <p className="mb-3 text-xs text-aco">Aparecem no formulário depois dos dados do solicitante. Mudanças não afetam chamados já abertos.</p>
+        <ol className="space-y-3">
+          {campos.map((campo, i) => (
+            <li key={i} className="rounded-md border border-borda bg-nevoa/40 p-3">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px_auto]">
+                <Input value={campo.rotulo} onChange={(e) => mudar(i, { rotulo: e.target.value })} placeholder="Pergunta. Ex.: Qual impressora" aria-label={`Pergunta ${i + 1}`} maxLength={80} required />
+                <Select value={campo.tipo} onChange={(e) => mudar(i, { tipo: e.target.value })} aria-label={`Tipo da pergunta ${i + 1}`}>
+                  {Object.entries(TIPOS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
+                </Select>
+                <button
+                  type="button"
+                  onClick={() => remover(i)}
+                  className="justify-self-end rounded p-2 text-aco hover:bg-white hover:text-prioridade-critica"
+                  aria-label={`Remover pergunta ${i + 1}`}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+              {campo.tipo === "selecao" && (
+                <Input className="mt-2" value={campo.opcoes} onChange={(e) => mudar(i, { opcoes: e.target.value })} placeholder="Opções separadas por vírgula. Ex.: Não imprime, Sem toner, Outro" aria-label={`Opções da pergunta ${i + 1}`} required />
+              )}
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <Input className="min-w-[200px] flex-1" value={campo.ajuda} onChange={(e) => mudar(i, { ajuda: e.target.value })} placeholder="Texto de ajuda (opcional)" aria-label={`Ajuda da pergunta ${i + 1}`} maxLength={120} />
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={campo.obrigatorio} onChange={(e) => mudar(i, { obrigatorio: e.target.checked })} className="h-4 w-4 rounded border-borda accent-azul" />
+                  Obrigatória
+                </label>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <Button variante="secundario" tamanho="sm" icone={Plus} onClick={adicionar} disabled={campos.length >= MAX_CAMPOS} className="mt-3">
+          Adicionar pergunta
+        </Button>
+      </fieldset>
+
+      <Campo rotulo="Palavras-chave da busca" ajuda="Separadas por vírgula. Inclua sinônimos e termos que as pessoas usam. Ex.: toner, papel, atolado">
+        {(p) => <Input {...p} value={palavras} onChange={(e) => setPalavras(e.target.value)} />}
+      </Campo>
+      <Campo rotulo="Sugestões de assunto" ajuda="Uma por linha. Aparecem como atalhos ao preencher o assunto.">
+        {(p) => <Textarea {...p} value={sugestoes} onChange={(e) => setSugestoes(e.target.value)} rows={3} />}
+      </Campo>
+      <Campo rotulo="Modelo de descrição" ajuda="Opcional. Em branco, vale o modelo padrão (o que aconteceu, desde quando, o que já tentou).">
+        {(p) => <Textarea {...p} value={modelo} onChange={(e) => setModelo(e.target.value)} rows={3} maxLength={1000} />}
+      </Campo>
+    </div>
   );
 }
